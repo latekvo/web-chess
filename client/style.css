@@ -1,0 +1,70 @@
+:root {
+    --darktone: #343434;
+    --midtone: #424242;
+    --lighttone: #424242;
+
+    --board-light: #e09e9e;
+    --board-dark: #9f6666;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    height: 100%;
+    margin: 0;
+
+    background-color: var(--darktone);
+}
+
+.flex-container {
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.flex-item {
+    background-color: var(--midtone);
+    height: 70vh;
+    margin: 10px;
+}
+
+#game-menu {
+    width: 20vw;
+    flex-direction: column;
+}
+
+#user-data {
+    width: 90%;
+    height: 30%;
+
+    background-color: tomato; /* todo: remove */
+
+}
+
+#game-list {
+    width: 90%;
+    height: 62%;
+
+    overflow: scroll;
+
+    background-color: tomato; /* todo: remove */
+
+
+}
+
+#outer-game-board {
+    width: 50vw;
+}
+
+/* width & height should be dynamically set to be a square */
+#inner-game-board {
+    height: 90%;
+    aspect-ratio: 1 / 1;
+
+    background-color: tomato; /* todo: remove */
+}
