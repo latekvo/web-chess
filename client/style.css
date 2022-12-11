@@ -3,8 +3,8 @@
     --midtone: #424242;
     --lighttone: #424242;
 
-    --board-light: #e09e9e;
-    --board-dark: #9f6666;
+    --board-light: #e99;
+    --board-dark: #966;
 }
 
 html {
@@ -30,31 +30,33 @@ body {
 .flex-item {
     background-color: var(--midtone);
     height: 70vh;
-    margin: 10px;
+    margin: 0;
 }
 
 #game-menu {
     width: 20vw;
+    margin-left: 1vw;
     flex-direction: column;
 }
 
 #user-data {
     width: 90%;
     height: 30%;
+    margin: 1vw;
 
     background-color: tomato; /* todo: remove */
 
 }
 
 #game-list {
-    width: 90%;
-    height: 62%;
+    width:  90%;
+    height: 70%;
+
+    margin: 0 1vw 1vw 1vw;
 
     overflow: scroll;
 
     background-color: tomato; /* todo: remove */
-
-
 }
 
 #outer-game-board {
@@ -62,9 +64,52 @@ body {
 }
 
 /* width & height should be dynamically set to be a square */
-#inner-game-board {
-    height: 90%;
+#perimeter-game-board {
+    height: 95%;
     aspect-ratio: 1 / 1;
 
-    background-color: tomato; /* todo: remove */
+    background-color: var(--darktone); /* todo: remove */
+}
+
+#game-board {
+    height: 95%;
+    aspect-ratio: 1 / 1;
+    flex-direction: column;
+}
+
+.chess-box {
+    height: 100%;
+    aspect-ratio: 1 / 1;
+
+    background-color: blue;
+}
+
+.chess-row {
+    height: 12.5%;
+}
+
+/* CHESSBOARD COLORS */
+
+.chess-row:nth-child(2n) > .chess-box:nth-child(2n + 1) {
+    background-color: var(--board-light);
+}
+
+.chess-row:nth-child(2n) > .chess-box:nth-child(2n) {
+    background-color: var(--board-dark);
+}
+
+.chess-row:nth-child(2n + 1) > .chess-box:nth-child(2n + 1) {
+    background-color: var(--board-dark);
+}
+
+.chess-row:nth-child(2n + 1) > .chess-box:nth-child(2n) {
+    background-color: var(--board-light);
+}
+
+.field-label-vertical {
+
+}
+
+.field-label-horizontal {
+
 }

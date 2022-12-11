@@ -5,13 +5,15 @@
     <title>Chess</title>
 
     <link rel="stylesheet" type="text/css" href="style.css"/>
+    <script src="main.js"></script>
 
 </head>
 <body>
     <div id="content" class="flex-container">
         <div id="outer-game-board" class="flex-item flex-container">
-            <div id="inner-game-board" class="flex-item">
-
+            <div id="perimeter-game-board" class="flex-item flex-container">
+                <div id="game-board" class="flex-item flex-container">
+                </div>
             </div>
         </div>
         <div id="game-menu" class="flex-item flex-container">
@@ -23,5 +25,11 @@
             </div>
         </div>
     </div>
+
+    <script>
+        createBoard();
+        init();
+    </script>
+
 </body>
 </html>
