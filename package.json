@@ -1,0 +1,28 @@
+{
+  "name": "web_chess",
+  "version": "1.0.0",
+  "description": "Web chess server + client",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LatekVo/web-chess.git"
+  },
+  "keywords": [
+    "chess"
+  ],
+  "author": "Ignacy Łątka",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LatekVo/web-chess/issues"
+  },
+  "homepage": "https://github.com/LatekVo/web-chess#readme",
+  "dependencies": {
+    "body-parser": "^1.20.1",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.18.2"
+  }
+}
