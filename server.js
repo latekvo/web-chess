@@ -36,20 +36,30 @@ const pieceEnum = {
 let pe = pieceEnum;
 
 // this will be far simpler for using checkForMate() as compared to a list-of-pieces approach
-let blankBoardPrefab = [
-    [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R] // 1 (0)
-    [pe.W_P],
-    [pe.BLANK],
-    [pe.BLANK],
-    [pe.BLANK],
-    [pe.BLANK],
-    [pe.B_P],
-    [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R], // 8 (7)
-]
+let blankBoardPrefab = {
+    boardId: undefined, // main key
+
+    // foreign keys of both players
+    whiteId: undefined,
+    blackId: undefined,
+
+    moveList: [], // [ [from, to], [from, to] ]
+
+    board: [
+        [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R] // 1 (0)
+        [pe.W_P],
+        [pe.BLANK],
+        [pe.BLANK],
+        [pe.BLANK],
+        [pe.BLANK],
+        [pe.B_P],
+        [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R], // 8 (7)
+    ]
+}
 
 for (let y = 1; y < 7; y++) {
     for (let x = 1; x < 8; x++) {
-        blankBoardPrefab[y].push(blankBoardPrefab[y][0])
+        blankBoardPrefab[y].push(blankBoardPrefab.board[y][0])
     }
 }
 
@@ -67,6 +77,13 @@ let atk_pos_list = [
     { pieces: [pe.B_P], positions: [[-1, -1], [1, -1]] }
 ]
 // also add a case for pawn moving forwards, and special case for pawn moving from row 2 to 4 or 7 to 5
+
+let mov_vel_list = atk_vel_list; // duplicate for ease of use and ease of readability
+let mov_pos_list = atk_pos_list; // modified pawn behaviour compared to atk_pos_list
+
+// replace movement options for pawns, from diagonal to vertical
+mov_pos_list[2].positions = [[0, 1]]
+mov_pos_list[3].positions = [[0, -1]]
 
 // takes an array as the input returns 'false' if there is no mate, 'true' if there is
 function checkForMate(board) {
@@ -179,16 +196,32 @@ function checkForSpace() {
 
 }
 
-async function makeBoard({boardId, firstPlayer, secondPlayer}) {
+async function makeBoard() {
+    let boardId = crypto.randomBytes(32).toString('hex');
 
-    fs.writeFile('boards/' + boardId, JSON.stringify(blankBoardPrefab), function (err) {
+    let newBoard = blankBoardPrefab;
+    newBoard.boardId = boardId
+
+    let board_db;
+    fs.readFile('board_db.json', function (err, data) {
         if (err) {
-            console.log("ERROR: Couldn't create a match for board ID: " + boardId);
+            console.log("ERROR: Couldn't read the db file, match ID: " + boardId);
             throw err;
         }
-        console.log('OK: created a new match, ID: ' + boardId);
+        // TODO ASAP: data is a json, one of it's fields contains the desired data, figure out which one
+        console.log(data);
+        //board_db = JSON.parse(data);
     });
 
+    fs.writeFile('board_db.json', JSON.stringify(board_db), function (err) {
+        if (err) {
+            console.log("ERROR: Couldn't write to board_db.json. Match ID: " + boardId);
+            throw err;
+        }
+        console.log('OK: created a new match and saved to board_db.json, ID: ' + boardId);
+    });
+
+    return boardId;
 }
 
 async function makeMove({boardId, moveFrom, moveTo}) {
@@ -200,14 +233,15 @@ async function makeMove({boardId, moveFrom, moveTo}) {
     );
 }
 
-async function makeMatch({boardId, firstPlayer, secondPlayer}) {
+async function startMatch({boardId, firstPlayer, secondPlayer}) {
 
 }
 
-app.post('/newGame', (req, res) => {
+app.post('/createGame', (req, res) => {
 
-    makeBoard()
-    // write both req and res to the board file, as soon as someone joins, reactivate both req and res and send them an OK
+    // Advertise, then use makeMatch
+    // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
+
     res.writeHead(200);
     res.send();
 });
