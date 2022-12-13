@@ -11,6 +11,7 @@ let cookieParser = require('cookie-parser');
 // we'll try express atop of what's already here, it may be useful
 let express = require('express');
 let app = express();
+let crypto = require("crypto");
 
 app.use(express.static(__dirname + '/client/'));
 app.use(bodyParser.urlencoded({extended : true}));
@@ -60,13 +61,14 @@ let atk_vel_list = [
 ]
 // remember: black pieces are at the bottom, white at the top, this can ONLY be visually be reversed, and ONLY at the client side
 let atk_pos_list = [
-    { pieces: [pe.W_K, pe.B_K], velocities: [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] },
-    { pieces: [pe.W_N, pe.B_N], velocities: [[-1, 2], [1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1]] },
-    { pieces: [pe.W_P], velocities: [[-1, 1], [1, 1]] },
-    { pieces: [pe.B_P], velocities: [[-1, -1], [1, -1]] }
+    { pieces: [pe.W_K, pe.B_K], positions: [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] },
+    { pieces: [pe.W_N, pe.B_N], positions: [[-1, 2], [1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1]] },
+    { pieces: [pe.W_P], positions: [[-1, 1], [1, 1]] },
+    { pieces: [pe.B_P], positions: [[-1, -1], [1, -1]] }
 ]
+// also add a case for pawn moving forwards, and special case for pawn moving from row 2 to 4 or 7 to 5
 
-// takes an array as the input returns 0 if there is no mate, 1 if there is
+// takes an array as the input returns 'false' if there is no mate, 'true' if there is
 function checkForMate(board) {
     // * find kings
     // * cast horizontal, vertical and diagonal rays from the king
@@ -77,23 +79,99 @@ function checkForMate(board) {
     for (let y = 0; y < 8; y++) {
         for (let x = 0; x < 8; x++) {
             if (board[y][x] === pe.W_K) {
-                white_king = [x, y]
+                white_king = {x: x, y: y}
             }
             if (board[y][x] === pe.B_K) {
-                black_king = [x, y]
+                black_king = {x: x, y: y}
             }
         }
     }
 
     // todo: implement error checking for - no kings detected
 
+    let isMate = false;
     for (let caseId = 0; caseId < atk_vel_list.length; caseId++) {
+        let wStopChecking = false, bStopChecking = false;
 
-    }
+        for (let velocityId = 0; velocityId < atk_vel_list[caseId].positions.length; velocityId++) {
+            // cast a ray
+            for (let i = 0, r_w = white_king, r_b = black_king; i < 8; i++) {
 
+                r_w += atk_vel_list[caseId].positions[velocityId];
+                r_b += atk_vel_list[caseId].positions[velocityId];
+
+                // check for: not being out of bounds
+                if (!(0 < r_w.x && r_w.x < 7) || !(0 < r_w.y && r_w.y < 7))
+                    wStopChecking = true;
+
+                // check for: not being out of bounds
+                if (!(0 < r_b.x && r_b.x < 7) || !(0 < r_b.y && r_b.y < 7))
+                    bStopChecking = true;
+
+                for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
+                    if (wStopChecking === false && board[r_w.y][r_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                        isMate = true;
+                        wStopChecking = true;
+                    }
+                    if (bStopChecking === false && board[r_b.y][r_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                        isMate = true;
+                        bStopChecking = true;
+                    }
+                }
+
+                if (isMate) break;
+            }
+
+            if (isMate) break;
+        }
+
+        if (isMate) break;
+    } // wanted to use goto, it didn't work too well with my IDE, so I had to use this ugly approach
+
+    // this loop needs to be separate, as it looks at points, not rays
     for (let caseId = 0; caseId < atk_pos_list.length; caseId++) {
+        let wStopChecking = false, bStopChecking = false;
+
+        for (let positionId = 0; positionId < atk_vel_list[caseId].positions.length; positionId++) {
+
+            let r_w = white_king + atk_vel_list[caseId].positions[positionId];
+            let r_b = black_king + atk_vel_list[caseId].positions[positionId];
+
+            // check for: not being out of bounds
+            if (!(0 < r_w.x && r_w.x < 7) || !(0 < r_w.y && r_w.y < 7))
+                continue;
+
+            // check for: not being out of bounds
+            if (!(0 < r_b.x && r_b.x < 7) || !(0 < r_b.y && r_b.y < 7))
+                continue;
+
+            for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
+                if (wStopChecking === false && board[r_w.y][r_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                    isMate = true;
+                    wStopChecking = true;
+                }
+                if (bStopChecking === false && board[r_b.y][r_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                    isMate = true;
+                    bStopChecking = true;
+                }
+            }
+
+            // check for: line of sight
+            if (board[r_w.y][r_w.x] !== pe.BLANK)
+                wStopChecking = true;
+
+            // check for: line of sight
+            if (board[r_b.y][r_b.x] !== pe.BLANK)
+                bStopChecking = true;
+
+            if (isMate) break;
+        }
+
+        if (isMate) break;
 
     }
+
+    return isMate;
 }
 
 // returns 1 if there is space, 0 if there is not
@@ -101,29 +179,42 @@ function checkForSpace() {
 
 }
 
-async function makeBoard({boardId, moveFrom, moveTo}) {
+async function makeBoard({boardId, firstPlayer, secondPlayer}) {
 
-    fs.writeFile(boardId, JSON.stringify(blankBoardPrefab), function (err) {
-        if (err) throw err;
-        console.log('Saved!');
+    fs.writeFile('boards/' + boardId, JSON.stringify(blankBoardPrefab), function (err) {
+        if (err) {
+            console.log("ERROR: Couldn't create a match for board ID: " + boardId);
+            throw err;
+        }
+        console.log('OK: created a new match, ID: ' + boardId);
     });
 
 }
 
 async function makeMove({boardId, moveFrom, moveTo}) {
+    let board = JSON.parse(
+        await fs.promises.readFile(
+            'boards/' + boardId,
+            { encoding : 'utf8'}
+        )
+    );
+}
+
+async function makeMatch({boardId, firstPlayer, secondPlayer}) {
 
 }
 
-app.get('/newGame', (req, res) => {
-    // JSON [from] [to]
+app.post('/newGame', (req, res) => {
 
+    makeBoard()
+    // write both req and res to the board file, as soon as someone joins, reactivate both req and res and send them an OK
     res.writeHead(200);
-    res.write(fs.readFileSync('assets/register.html', 'utf8'));
     res.send();
 });
 
-// waiting request, responded to when available, could be minutes before response
 app.get('/getMove', (req, res) => {
+    // waiting request, responded to when available, could be minutes before response
+    // cache the request, then respond only after receiving a valid move from the enemy
     // JSON [from] [to]
 
     res.writeHead(200);
@@ -134,12 +225,17 @@ app.get('/getMove', (req, res) => {
 app.post('/makeMove', async (req, res) => {
     let {boardId, moveFrom, moveTo} = req.body;
 
-    console.log("move made: " + {boardId, moveFrom, moveTo});
+    console.log("OK: move made: " + {boardId, moveFrom, moveTo});
 
-    let response = await makeMove({boardId, moveFrom, moveTo});
+    if (await makeMove({boardId, moveFrom, moveTo})) {
+        res.writeHead(200);
+    }   else {
+        // move could not be made
+        res.writeHead(400);
+
+    }
 
     // 200 or 300
-    res.writeHead(response);
     res.send();
 });
 
