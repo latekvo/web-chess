@@ -1,11 +1,14 @@
 // node.js chess web server
 // partially recycled from my 'viva-forums' project
 
+// unfortunately, I had miscalled a lot of aspects and mechanics of chess, this could make the code unreadable,
+// but for the project to remain coherent, 'check' will keep on being called a 'mate', and a 'mate' either 'gameOver', or 'checkMate'
+
 let http = require('http');
 let events = require("events");
 let fs = require('fs');
 
-let bodyParser = require('body-parser')
+let bodyParser = require('body-parser');
 let cookieParser = require('cookie-parser');
 
 // we'll try express atop of what's already here, it may be useful
@@ -13,12 +16,25 @@ let express = require('express');
 let app = express();
 let crypto = require("crypto");
 
+// standard mutex lock
+// basic syntax: lock.[read|write]Lock('lock's key', function (freeLock) { /// freeLock(); } )
+let ReadWriteLock = require('rwlock');
+let lock = new ReadWriteLock();
+
 app.use(express.static(__dirname + '/client/'));
 app.use(bodyParser.urlencoded({extended : true}));
 app.use(cookieParser());
 
+const board_db = new Map([]); // stores current board state bound to match's id
+const open_matches_db = []; // array of awaiting matches
+const player_db = new Map([]); // stores stats bound to username, so that a user can be quickly looked up
+
 const pieceEnum = {
     BLANK: -1,
+
+    WHITE: -2,
+    BLACK: -3,
+
     W_K: 0,
     W_Q: 1,
     W_R: 2,
@@ -36,13 +52,13 @@ const pieceEnum = {
 let pe = pieceEnum;
 
 // this will be far simpler for using checkForMate() as compared to a list-of-pieces approach
-let blankBoardPrefab = {
-    boardId: undefined, // main key
+const blankBoardPrefab = {
 
     // foreign keys of both players
     whiteId: undefined,
     blackId: undefined,
 
+    toMove: pe.WHITE,
     moveList: [], // [ [from, to], [from, to] ]
 
     board: [
@@ -59,7 +75,7 @@ let blankBoardPrefab = {
 
 for (let y = 1; y < 7; y++) {
     for (let x = 1; x < 8; x++) {
-        blankBoardPrefab[y].push(blankBoardPrefab.board[y][0])
+        blankBoardPrefab.board[y].push(blankBoardPrefab.board[y][0])
     }
 }
 
@@ -85,12 +101,24 @@ let mov_pos_list = atk_pos_list; // modified pawn behaviour compared to atk_pos_
 mov_pos_list[2].positions = [[0, 1]]
 mov_pos_list[3].positions = [[0, -1]]
 
+function getColor(piece_id) {
+    if (piece_id < 0)
+        return pe.BLANK
+
+    if (piece_id < pe.B_K)
+        return pe.WHITE
+
+    return pe.BLACK
+}
+
 // takes an array as the input returns 'false' if there is no mate, 'true' if there is
 function checkForMate(board) {
     // * find kings
     // * cast horizontal, vertical and diagonal rays from the king
     // * if there is an attacking element in the way of the ray, announce a check
     // * only way to lose (for simplicity) is to resign, so if the king can't move, he needs to resign.
+    // ? why is that? besides checking for king's space, I would need to check if any piece can get in the way of ray
+    // ? and that will be complicated. This is on a far off TODO list
     let white_king, black_king
 
     for (let y = 0; y < 8; y++) {
@@ -103,8 +131,6 @@ function checkForMate(board) {
             }
         }
     }
-
-    // todo: implement error checking for - no kings detected
 
     let isMate = false;
     for (let caseId = 0; caseId < atk_vel_list.length; caseId++) {
@@ -192,58 +218,91 @@ function checkForMate(board) {
 }
 
 // returns 1 if there is space, 0 if there is not
-function checkForSpace() {
+// argument format TBD
+function checkForSpace(boardId, {f_x, f_y}, {t_x, t_y}) {
+    let board = board_db.get(boardId).board
 
+    let pieceId = board.board[f_y][f_x]
+    let targetPieceId = board.board[t_y][t_x]
+
+    let pieceCol = getColor(pieceId)
+    let targetPieceCol = getColor(targetPieceId)
+
+    let isSpace = true
+    let checkedIt = false
+
+    // initial checks before any of the loops happen
+    // is the target square opposite color? pe.B_K is the first black piece in the enum.
+    if (pieceCol === targetPieceCol) {
+        isSpace = false;
+        checkedIt = true;
+    }
+
+    // check which piece is 'piece_id' pointing to, then cast a ray in that direction
+    for (let i = 0; checkedIt === false, i < mov_vel_list; i++) {
+        for (let pieceVariant = 0; pieceVariant < mov_vel_list[i].pieces.length; pieceVariant++) {
+            // find the correct piece
+            if (mov_vel_list[i].pieces[pieceVariant] === pieceId) {
+
+                /// cast a ray until it reaches the x, y; if it doesn't, that's just bad luck.
+                // get the distance, multiply every ray by said distance,
+                // this will help us simply choose the correct ray to cast.
+                // Cast it, until the destination or an obstacle is met
+
+                checkedIt = true;
+                break;
+            }
+        }
+    }
+
+    return isSpace
 }
 
-async function makeBoard() {
+function makeBoard(whiteUser, blackUser) {
     let boardId = crypto.randomBytes(32).toString('hex');
 
-    let newBoard = blankBoardPrefab;
+    let newBoard = blankBoardPrefab
+
     newBoard.boardId = boardId
+    newBoard.whiteId = whiteUser
+    newBoard.blackId = blackUser
 
-    let board_db;
-    fs.readFile('board_db.json', function (err, data) {
-        if (err) {
-            console.log("ERROR: Couldn't read the db file, match ID: " + boardId);
-            throw err;
-        }
-        // TODO ASAP: data is a json, one of it's fields contains the desired data, figure out which one
-        console.log(data);
-        //board_db = JSON.parse(data);
-    });
+    lock.writeLock('board_db', function (release) {
+        // 16.12: removed references to board_db.json
 
-    fs.writeFile('board_db.json', JSON.stringify(board_db), function (err) {
-        if (err) {
-            console.log("ERROR: Couldn't write to board_db.json. Match ID: " + boardId);
-            throw err;
-        }
-        console.log('OK: created a new match and saved to board_db.json, ID: ' + boardId);
+        board_db.set(boardId, newBoard)
+
     });
 
     return boardId;
 }
 
-async function makeMove({boardId, moveFrom, moveTo}) {
-    let board = JSON.parse(
-        await fs.promises.readFile(
-            'boards/' + boardId,
-            { encoding : 'utf8'}
-        )
-    );
+function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
+
+    let isMovePossible = checkForSpace(boardId, {f_x, f_y}, {t_x, t_y})
+    let isMoveMating = checkForMate(boardId)
+
+    /// modify the board and save the results
+
 }
 
-async function startMatch({boardId, firstPlayer, secondPlayer}) {
+function startMatch(boardId, secondPlayer) {
 
 }
 
 app.post('/createGame', (req, res) => {
+    let creatorID = undefined; // TODO: >>> get this from the request
+    let whiteUser = undefined, blackUser = undefined;
+
+    Math.random() < 0.5 ? whiteUser = creatorID : blackUser = creatorID;
 
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
+    let boardID = makeBoard(whiteUser, blackUser);
 
-    res.writeHead(200);
-    res.send();
+    res.write(JSON.stringify({boardID: boardID}))
+    res.writeHead(200)
+    res.send()
 });
 
 app.get('/getMove', (req, res) => {
@@ -257,19 +316,18 @@ app.get('/getMove', (req, res) => {
 });
 
 app.post('/makeMove', async (req, res) => {
-    let {boardId, moveFrom, moveTo} = req.body;
+    let boardId, moveFrom, moveTo; // TODO: >>> get this from the request
 
     console.log("OK: move made: " + {boardId, moveFrom, moveTo});
 
-    if (await makeMove({boardId, moveFrom, moveTo})) {
+    if (await makeMove(boardId, moveFrom, moveTo)) {
         res.writeHead(200);
     }   else {
         // move could not be made
         res.writeHead(400);
-
     }
 
-    // 200 or 300
+    // 200 or 400
     res.send();
 });
 
@@ -280,6 +338,10 @@ app.get('/', function (req, res) {
     res.write(fs.readFileSync('client/index.html', 'utf8'));
     res.send();
 });
+
+// load main db
+// TODO: >>> implement auto-saving every move, ideally running on a separate thread
+
 
 let server = app.listen(3000);
 console.log("server started on port: 3000");
