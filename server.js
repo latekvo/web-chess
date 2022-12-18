@@ -101,6 +101,10 @@ let mov_pos_list = atk_pos_list; // modified pawn behaviour compared to atk_pos_
 mov_pos_list[2].positions = [[0, 1]]
 mov_pos_list[3].positions = [[0, -1]]
 
+/**
+ * Returns the color of a piece based on it's ID
+ * @param {Number} piece_id - Piece ID derived from the pieceEnum
+ */
 function getColor(piece_id) {
     if (piece_id < 0)
         return pe.BLANK
@@ -111,7 +115,11 @@ function getColor(piece_id) {
     return pe.BLACK
 }
 
-// takes an array as the input returns 'false' if there is no mate, 'true' if there is
+/**
+ * based on a raw board array, returns 'true' if there is a mate present
+ * @param {Array} board - board's array
+ * @returns {boolean} - 'true' if there is a mate present
+*/
 function checkForMate(board) {
     // * find kings
     // * cast horizontal, vertical and diagonal rays from the king
@@ -217,8 +225,15 @@ function checkForMate(board) {
     return isMate;
 }
 
-// returns 1 if there is space, 0 if there is not
-// argument format TBD
+/**
+ * returns 'true' if there is space and 'false' if there is none
+ * @param boardId - board's identifier hash
+ * @param f_x - x of the initial position
+ * @param f_y - y of the initial position
+ * @param t_x - x of the desired position
+ * @param t_y - y of the desired position
+ * @returns {boolean} - 'true' if there is space
+ */
 function checkForSpace(boardId, {f_x, f_y}, {t_x, t_y}) {
     let board = board_db.get(boardId).board
 
@@ -258,6 +273,12 @@ function checkForSpace(boardId, {f_x, f_y}, {t_x, t_y}) {
     return isSpace
 }
 
+/**
+ * creates a new board and pushes it to the board_db
+ * @param whiteUser - white user's identification hash
+ * @param blackUser - black user's identification hash
+ * @returns {string} - hash of the created board
+ */
 function makeBoard(whiteUser, blackUser) {
     let boardId = crypto.randomBytes(32).toString('hex');
 
@@ -277,15 +298,34 @@ function makeBoard(whiteUser, blackUser) {
     return boardId;
 }
 
+/**
+ * updates a desired board's state, first checking if it's even possible
+ * @param boardId - board's identifier hash
+ * @param f_x - x of the initial position
+ * @param f_y - y of the initial position
+ * @param t_x - x of the desired position
+ * @param t_y - y of the desired position
+ * @returns {boardState} - an enum indicating if the move succeeded and if there is a check or a mate present
+ */
 function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
+    let output;
 
+    // only checks for space
     let isMovePossible = checkForSpace(boardId, {f_x, f_y}, {t_x, t_y})
+
+    // a number (Enum), a move can mate either player, or even both at the same time
     let isMoveMating = checkForMate(boardId)
 
     /// modify the board and save the results
 
+    return output;
 }
 
+/**
+ * finalizes the match creation, does not return anything
+ * @param boardId - hash ID of the appropriate board
+ * @param secondPlayer - introduced player's ID hash
+ */
 function startMatch(boardId, secondPlayer) {
 
 }
@@ -305,13 +345,29 @@ app.post('/createGame', (req, res) => {
     res.send()
 });
 
+/**
+ * will cache GET getMove request, based on who requested it
+ * @param req - http request
+ * @param res - http response, to be cached
+ */
+function initGetMove(req, res) {
+    //player_db.get( /**/ )
+}
+
+/**
+ * will send cached GET getMove request, called right after receiving a move from an opponent
+ * @param boardId - hash ID of the appropriate board
+ */
+function finishGetMove(boardId) {
+
+}
+
 app.get('/getMove', (req, res) => {
     // waiting request, responded to when available, could be minutes before response
     // cache the request, then respond only after receiving a valid move from the enemy
     // JSON [from] [to]
 
     res.writeHead(200);
-    res.write(fs.readFileSync('assets/register.html', 'utf8'));
     res.send();
 });
 
