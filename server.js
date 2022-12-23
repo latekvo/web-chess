@@ -10,11 +10,28 @@ let fs = require('fs');
 
 let bodyParser = require('body-parser');
 let cookieParser = require('cookie-parser');
+var bcrypt = require('bcrypt');
+let crypto = require("crypto");
+
+/* BCRYPT QUICK REFERENCE
+
+// To hash a password:
+bcrypt.genSalt(10, function(err, salt) {
+    bcrypt.hash("B4c0/\/", salt, function(err, hash) {
+        // Store hash in your password DB.
+    });
+});
+
+// To check your password,
+bcrypt.compare("B4c0/\/", hash, function(err, res) {
+    // res === true
+});
+
+ */
 
 // we'll try express atop of what's already here, it may be useful
 let express = require('express');
 let app = express();
-let crypto = require("crypto");
 
 // standard mutex lock
 // basic syntax: lock.[read|write]Lock('lock's key', function (freeLock) { /// freeLock(); } )
@@ -27,7 +44,36 @@ app.use(cookieParser());
 
 const board_db = new Map([]); // stores current board state bound to match's id
 const open_matches_db = []; // array of awaiting matches
-const player_db = new Map([]); // stores stats bound to username, so that a user can be quickly looked up
+const player_db = new Map([]); // stores stats bound to email, so that a user can be quickly looked up
+const active_users = new Map([]) // stores session-keys and accounts associated with them
+
+let boardState = {
+    UNRESOLVED: 0,
+
+    WHITE_WIN: 0,
+    BLACK_WIN: 0,
+
+    WHITE_CHECK: 0,
+    BLACK_CHECK: 0,
+
+    // some of those cases are overlapping, if they are it's an 'illegal move' anyway for the mover, even if it would have been a win
+}
+
+let blankActiveUserPrefab = {
+    email: undefined, // player_db main key
+
+    dateOfCreation: undefined,
+    awaitedRequest: undefined, // lingering GET 'getMove' request, cached here, erased when completed
+}
+
+let blankPlayerPrefab = {
+    // email is the key, it's not stored here
+
+    username: undefined,
+    password: undefined, // a hash of the password
+
+    rank: 1500
+}
 
 const pieceEnum = {
     BLANK: -1,
@@ -47,12 +93,13 @@ const pieceEnum = {
     B_B: 9,
     B_N: 10,
     B_P: 11
-};
+}
 
-let pe = pieceEnum;
+let pe = pieceEnum
 
 // this will be far simpler for using checkForMate() as compared to a list-of-pieces approach
 const blankBoardPrefab = {
+    // board ID is the key, it's not stored here
 
     // foreign keys of both players
     whiteId: undefined,
@@ -62,14 +109,14 @@ const blankBoardPrefab = {
     moveList: [], // [ [from, to], [from, to] ]
 
     board: [
-        [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R] // 1 (0)
+        [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
         [pe.W_P],
         [pe.BLANK],
         [pe.BLANK],
         [pe.BLANK],
         [pe.BLANK],
         [pe.B_P],
-        [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R], // 8 (7)
+        [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R] // 8 (7)
     ]
 }
 
@@ -385,6 +432,29 @@ app.post('/makeMove', async (req, res) => {
 
     // 200 or 400
     res.send();
+});
+
+app.post('/register', (req, res) => {
+    let {email, username, password, passwordRepeat} = req.body
+
+    // password repeat should be checked locally, and the 'register' button should just get greyed out
+
+    let newUser = blankPlayerPrefab
+    newUser.username = username
+
+    // gen salt, hash the password
+    bcrypt.genSalt(10, function(err, salt) {
+        bcrypt.hash(password, salt, function(err, hash) {
+            newUser.password = hash
+        });
+    });
+
+    // add the account
+    player_db.set(email, newUser)
+
+    // and respond with the landing page
+    res.write(fs.readFileSync('client/index.html', 'utf8'))
+    res.send()
 });
 
 // how do I send multiple files? when another file is linked to index.html, the request for it is auto sent to the server

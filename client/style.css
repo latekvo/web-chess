@@ -1,7 +1,11 @@
 :root {
-    --darktone: #343434;
+    --darktone: #383838;
     --midtone: #424242;
-    --lighttone: #424242;
+    --lighttone: #464646;
+
+    --badlight: #d55;
+    --goodlight: #5d5;
+    --marklight: #55d;
 
     --board-light: #e99;
     --board-dark: #966;
@@ -112,4 +116,137 @@ body {
 
 .field-label-horizontal {
 
+}
+
+#popup-window {
+    position: absolute;
+
+    height: 20vh;
+    width: 20vw;
+
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    background-color: tomato;
+
+    transition: opacity 1s ease-in, opacity 0.3s ease-out 0.5s;
+}
+
+#popup-window-text {
+    width: 90%;
+    height: 70%;
+
+    background-color: var(--board-light);
+}
+
+#popup-window-close {
+    background-color: greenyellow;
+    color: black;
+}
+
+input {
+    padding: 12px 20px;
+    margin: 8px 0;
+    display: inline-block;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+}
+
+/* REGISTER PAGE */
+
+div.register-background {
+    position: absolute;
+
+    width: 80vw;
+    height: 100vh;
+
+    top: 0;
+    left: 50vw;
+    transform: translateX(-50%);
+
+    background: repeating-linear-gradient(
+            -45deg,
+            var(--darktone),
+            var(--darktone) 30px,
+            var(--lighttone) 30px,
+            var(--lighttone) 60px
+    );
+    /* example of a gradient to try out
+        background: repeating-linear-gradient(
+            -45deg,
+            #9ea9ef,
+            #606dbc 20px,
+            #414551 20px,
+            #465298 40px
+    );
+     */
+}
+div.bar {
+    position: absolute;
+
+    width: 4vw;
+    height: 100%;
+
+    top: 0;
+    left: 10vw;
+    transform: translateX(-50%);
+
+    background-color: var(--midtone);
+}
+div.bar:nth-child(2) {
+    left: 90vw;
+}
+
+div.register-box {
+
+    position: absolute;
+    left: 50vw;
+    top: 50vh;
+    transform: translate(-50%, -50%);
+
+    width: 40vw;
+
+    border: black solid thin;
+    border-radius: 1%;
+
+    background-color: var(--midtone);
+    color: ghostwhite;
+}
+
+div.register-header {
+    display: flex;
+
+    height: 5vh;
+    width: 100%;
+
+    align-items: center;
+    text-align: left;
+    text-indent: 1vw;
+
+    background-color: var(--marklight);
+
+    font-size: larger;
+    font-family: "Montserrat", sans-serif;
+}
+
+div.register-field {
+    display: table;
+
+    margin: 2vh 1vw 2vh 3vh;
+    width: 100%;
+}
+
+input[type="text"], input[type="password"], input[type="email"] {
+    display: block;
+    width: 45%;
+
+
+    padding: 4px 10px;
+    margin: 8px 0;
+
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+
+    font-size: smaller;
 }
