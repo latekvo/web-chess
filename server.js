@@ -44,17 +44,19 @@ app.use(cookieParser());
 
 const board_db = new Map([]); // stores current board state bound to match's id
 const open_matches_db = []; // array of awaiting matches
-const player_db = new Map([]); // stores stats bound to email, so that a user can be quickly looked up
+const user_db = new Map([]); // stores stats bound to email, so that a user can be quickly looked up
 const active_users = new Map([]) // stores session-keys and accounts associated with them
 
 let boardState = {
+    INVALID: -1,
+
     UNRESOLVED: 0,
 
-    WHITE_WIN: 0,
-    BLACK_WIN: 0,
+    WHITE_WIN: 1,
+    BLACK_WIN: 2,
 
-    WHITE_CHECK: 0,
-    BLACK_CHECK: 0,
+    WHITE_CHECKD: 3,
+    BLACK_CHECKD: 4,
 
     // some of those cases are overlapping, if they are it's an 'illegal move' anyway for the mover, even if it would have been a win
 }
@@ -165,7 +167,7 @@ function getColor(piece_id) {
 /**
  * based on a raw board array, returns 'true' if there is a mate present
  * @param {Array} board - board's array
- * @returns {boolean} - 'true' if there is a mate present
+ * @returns {boardState} - UNRESOLVED if nothing got detected, otherwise describes the situation present
 */
 function checkForMate(board) {
     // * find kings
@@ -187,89 +189,104 @@ function checkForMate(board) {
         }
     }
 
-    let isMate = false;
+    let isWhiteMated = false;
+    let isBlackMated = false;
+
+    // RAYCAST CHECK
     for (let caseId = 0; caseId < atk_vel_list.length; caseId++) {
-        let wStopChecking = false, bStopChecking = false;
+        for (let velocityId = 0; velocityId < atk_vel_list[caseId].velocities.length; velocityId++) {
+            let wStopRay = false, bStopRay = false;
 
-        for (let velocityId = 0; velocityId < atk_vel_list[caseId].positions.length; velocityId++) {
             // cast a ray
-            for (let i = 0, r_w = white_king, r_b = black_king; i < 8; i++) {
-
-                r_w += atk_vel_list[caseId].positions[velocityId];
-                r_b += atk_vel_list[caseId].positions[velocityId];
-
-                // check for: not being out of bounds
-                if (!(0 < r_w.x && r_w.x < 7) || !(0 < r_w.y && r_w.y < 7))
-                    wStopChecking = true;
+            for (let i = 0, ray_w = white_king, ray_b = black_king; i < 8; i++) {
+                // iterate the ray
+                ray_w += atk_vel_list[caseId].velocities[velocityId];
+                ray_b += atk_vel_list[caseId].velocities[velocityId];
 
                 // check for: not being out of bounds
-                if (!(0 < r_b.x && r_b.x < 7) || !(0 < r_b.y && r_b.y < 7))
-                    bStopChecking = true;
+                if (!(0 < ray_w.x && ray_w.x < 7) || !(0 < ray_w.y && ray_w.y < 7))
+                    wStopRay = true;
 
+                if (!(0 < ray_b.x && ray_b.x < 7) || !(0 < ray_b.y && ray_b.y < 7))
+                    bStopRay = true;
+
+                // check for the piece attacking a king
                 for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
-                    if (wStopChecking === false && board[r_w.y][r_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
-                        isMate = true;
-                        wStopChecking = true;
+                    if (wStopRay === false && board[ray_w.y][ray_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                        isWhiteMated = true;
+                        wStopRay = true;
                     }
-                    if (bStopChecking === false && board[r_b.y][r_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
-                        isMate = true;
-                        bStopChecking = true;
+                    if (bStopRay === false && board[ray_b.y][ray_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                        isBlackMated = true;
+                        bStopRay = true;
                     }
                 }
 
-                if (isMate) break;
+                // check for: line of sight
+                if (board[ray_w.y][ray_w.x] !== pe.BLANK)
+                    wStopRay = true;
+
+                if (board[ray_b.y][ray_b.x] !== pe.BLANK)
+                    bStopRay = true;
+
             }
 
-            if (isMate) break;
         }
-
-        if (isMate) break;
-    } // wanted to use goto, it didn't work too well with my IDE, so I had to use this ugly approach
-
-    // this loop needs to be separate, as it looks at points, not rays
-    for (let caseId = 0; caseId < atk_pos_list.length; caseId++) {
-        let wStopChecking = false, bStopChecking = false;
-
-        for (let positionId = 0; positionId < atk_vel_list[caseId].positions.length; positionId++) {
-
-            let r_w = white_king + atk_vel_list[caseId].positions[positionId];
-            let r_b = black_king + atk_vel_list[caseId].positions[positionId];
-
-            // check for: not being out of bounds
-            if (!(0 < r_w.x && r_w.x < 7) || !(0 < r_w.y && r_w.y < 7))
-                continue;
-
-            // check for: not being out of bounds
-            if (!(0 < r_b.x && r_b.x < 7) || !(0 < r_b.y && r_b.y < 7))
-                continue;
-
-            for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
-                if (wStopChecking === false && board[r_w.y][r_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
-                    isMate = true;
-                    wStopChecking = true;
-                }
-                if (bStopChecking === false && board[r_b.y][r_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
-                    isMate = true;
-                    bStopChecking = true;
-                }
-            }
-
-            // check for: line of sight
-            if (board[r_w.y][r_w.x] !== pe.BLANK)
-                wStopChecking = true;
-
-            // check for: line of sight
-            if (board[r_b.y][r_b.x] !== pe.BLANK)
-                bStopChecking = true;
-
-            if (isMate) break;
-        }
-
-        if (isMate) break;
 
     }
 
-    return isMate;
+    // POSITION CHECK - this loop needs to be separate, as it looks at points, not rays
+    for (let caseId = 0; caseId < atk_pos_list.length; caseId++) {
+        for (let positionId = 0; positionId < atk_pos_list[caseId].positions.length; positionId++) {
+            let wStopChecking = false
+            let bStopChecking = false
+
+            // set the checked point
+            let point_w = white_king + atk_pos_list[caseId].positions[positionId];
+            let point_b = black_king + atk_pos_list[caseId].positions[positionId];
+
+            // check for: not being out of bounds
+            if (!(0 < point_w.x && point_w.x < 7) || !(0 < point_w.y && point_w.y < 7))
+                wStopChecking = true
+
+            if (!(0 < point_b.x && point_b.x < 7) || !(0 < point_b.y && point_b.y < 7))
+                bStopChecking = true
+
+            for (let pieceId = 0; pieceId < atk_pos_list[caseId].pieces.length; pieceId++) {
+                if (wStopChecking === false && board[point_w.y][point_w.x] === atk_pos_list[caseId].pieces[pieceId]) {
+                    isWhiteMated = true
+                }
+                if (bStopChecking === false && board[point_b.y][point_b.x] === atk_pos_list[caseId].pieces[pieceId]) {
+                    isBlackMated = true
+                }
+            }
+        }
+    }
+
+    let isWhiteLocked = false
+    let isBlackLocked = false
+
+    // todo: besides checking for check, see if it's possible to escape this check, or to block it.
+    // only calculated to reassure either isWhiteMated or isBlackMated, they have to be true
+
+    let output = boardState.UNRESOLVED
+
+    if (isWhiteMated)
+        output = boardState.WHITE_CHECKD
+
+    if (isBlackMated)
+        output = boardState.BLACK_CHECKD
+
+    if (isWhiteLocked)
+        output = boardState.BLACK_WIN
+
+    if (isBlackLocked)
+        output = boardState.WHITE_WIN
+
+    if (isWhiteMated && isBlackMated)
+        output = boardState.INVALID
+
+    return output;
 }
 
 /**
