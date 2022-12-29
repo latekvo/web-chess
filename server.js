@@ -48,23 +48,42 @@ const user_db = new Map([]); // stores stats bound to email, so that a user can 
 const active_users = new Map([]) // stores session-keys and accounts associated with them
 
 let boardState = {
-    INVALID: -1,
+    INVALID: -1, // some of those cases are overlapping, if they are it's an 'illegal move' anyway for the mover, even if it had been a win
 
-    UNRESOLVED: 0,
+    UNRESOLVED: 0, // still ongoing
 
-    WHITE_WIN: 1,
+    WHITE_WIN: 1, // 'win' is only achieved when check-mating the opponent
     BLACK_WIN: 2,
 
-    WHITE_CHECKD: 3,
+    WHITE_CHECKD: 3, // to clarify, WHITE_CHECKD = white king is attacked
     BLACK_CHECKD: 4,
 
-    // some of those cases are overlapping, if they are it's an 'illegal move' anyway for the mover, even if it would have been a win
+    WHITE_RESIGNED: 5,
+    BLACK_RESIGNED: 6,
+
+    WHITE_ABANDONED: 7,
+    BLACK_ABANDONED: 8
+
+}
+
+const errorCode = {
+
+    INVALID_LOGIN: 0,
+    INVALID_PASSWORD: 0,
+
+    SESSION_TIMED_OUT: 0,
+
+    BAD_REQUEST: 0,
+
+    MATCH_ENDED: 0,
+
 }
 
 let blankActiveUserPrefab = {
     email: undefined, // player_db main key
 
-    dateOfCreation: undefined,
+    currentBoardId: undefined,
+    dateOfCreation: undefined, // logins older than X may be timed out
     awaitedRequest: undefined, // lingering GET 'getMove' request, cached here, erased when completed
 }
 
@@ -109,6 +128,8 @@ const blankBoardPrefab = {
 
     toMove: pe.WHITE,
     moveList: [], // [ [from, to], [from, to] ]
+
+    gameState: undefined, // boardState enum defining current state, with UNRESOLVED being still active
 
     board: [
         [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
@@ -166,18 +187,117 @@ function getColor(piece_id) {
 
 /**
  * based on a raw board array, returns 'true' if there is a mate present
- * @param {Array} board - board's array
+ * @param {Array} boardId - board's id
+ *
+ * @param f_x - move's x origin
+ * @param f_y - move's y origin
+ * @param t_x - move's x target
+ * @param t_y - move's y target
+ *
  * @returns {boardState} - UNRESOLVED if nothing got detected, otherwise describes the situation present
-*/
-function checkForMate(board) {
+ */
+function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
+    let board = board_db.get(boardId).board
+
+    let pieceId = board[f_y][f_x]
+    let pieceCol = getColor(pieceId)
+
+    // CHECK FOR POSSIBILITY OF A MOVE
+    // ray-cast - check for obstacles
+    // pos-check - check for friendlies at the destination
+
+    // find piece's iterator in the mov_vel_list or mov_pos_list
+    let pieceIt = -1
+    let isPosBased = false
+    for (let i = 0; mov_vel_list.length; i++) {
+        if (mov_vel_list[i].pieces === pieceId)
+            pieceIt = i
+    }
+    for (let i = 0; mov_pos_list.length; i++) {
+        if (mov_pos_list[i].pieces === pieceId) {
+            pieceIt = i
+            isPosBased = true
+        }
+    }
+
+    // error, request corrupted, the square is blank
+    if (pieceIt === -1) {
+        return boardState.INVALID
+    }
+
+    let isMovePossible = false
+
+    // ray-cast
+    if (!isPosBased) {
+
+        let vel_x = 0,
+            vel_y = 0
+
+        // x - find the correct vector
+        if (f_x >= t_x) vel_x = -1
+        if (f_x <= t_x) vel_x = 1
+
+        if (f_y >= t_y) vel_y = -1
+        if (f_y <= t_y) vel_y = 1
+
+
+        let ray = {x: f_x, y: f_y}
+
+        // cast the ray
+        for (let i = 0; i < 8; i++) {
+
+            // iterate the ray
+            ray.x += vel_x
+            ray.y += vel_y
+
+            // check for: not being out of bounds
+            if (!(0 < ray.x && ray.x < 7) || !(0 < ray.y && ray.y < 7))
+                break
+
+
+            /* reached destination, and enemy is the opposite color */
+            if (f_x === t_x && f_y === t_y) {
+                isMovePossible = true
+            }
+
+            // check for: line of sight
+            if (board[ray.y][ray.x] !== pe.BLANK)
+                break
+
+        }
+
+    } else /* (isPosBased) */ {
+        // vec from f to t
+        let mask_x = t_x - f_x,
+            mask_y = t_y - f_y
+
+        // and just check if there exists a fitting mask for such a move
+        for (let i = 0; i < mov_pos_list[pieceIt].positions.length; i++) {
+            if (mask_x === mov_pos_list[pieceIt].positions[i].x &&
+                mask_y === mov_pos_list[pieceIt].positions[i].y) {
+
+                isMovePossible = true
+                break
+            }
+        }
+    }
+
+    // move will be impossible if both pieces are the same color
+    if (pieceCol === getColor(board[t_y][t_x])) {
+        isMovePossible = false
+    }
+
+    // CHECK FOR A MATE
     // * find kings
     // * cast horizontal, vertical and diagonal rays from the king
     // * if there is an attacking element in the way of the ray, announce a check
     // * only way to lose (for simplicity) is to resign, so if the king can't move, he needs to resign.
     // ? why is that? besides checking for king's space, I would need to check if any piece can get in the way of ray
     // ? and that will be complicated. This is on a far off TODO list
+
     let white_king, black_king
 
+    // find coords of the kings
     for (let y = 0; y < 8; y++) {
         for (let x = 0; x < 8; x++) {
             if (board[y][x] === pe.W_K) {
@@ -192,16 +312,22 @@ function checkForMate(board) {
     let isWhiteMated = false;
     let isBlackMated = false;
 
-    // RAYCAST CHECK
+    // RAY-CAST CHECK FOR A MATE
     for (let caseId = 0; caseId < atk_vel_list.length; caseId++) {
         for (let velocityId = 0; velocityId < atk_vel_list[caseId].velocities.length; velocityId++) {
-            let wStopRay = false, bStopRay = false;
+            let wStopRay = false, bStopRay = false
+
+            let vel_x = atk_vel_list[caseId].velocities[velocityId][0],
+                vel_y = atk_vel_list[caseId].velocities[velocityId][1]
 
             // cast a ray
             for (let i = 0, ray_w = white_king, ray_b = black_king; i < 8; i++) {
+
                 // iterate the ray
-                ray_w += atk_vel_list[caseId].velocities[velocityId];
-                ray_b += atk_vel_list[caseId].velocities[velocityId];
+                ray_w.x += vel_x
+                ray_w.y += vel_y
+                ray_b.x += vel_x
+                ray_b.y += vel_y
 
                 // check for: not being out of bounds
                 if (!(0 < ray_w.x && ray_w.x < 7) || !(0 < ray_w.y && ray_w.y < 7))
@@ -235,16 +361,21 @@ function checkForMate(board) {
 
     }
 
-    // POSITION CHECK - this loop needs to be separate, as it looks at points, not rays
+    // POSITION CHECK FOR A MATE - this loop needs to be separate, as it looks at points, not rays
     for (let caseId = 0; caseId < atk_pos_list.length; caseId++) {
         for (let positionId = 0; positionId < atk_pos_list[caseId].positions.length; positionId++) {
             let wStopChecking = false
             let bStopChecking = false
 
             // set the checked point
-            let point_w = white_king + atk_pos_list[caseId].positions[positionId];
-            let point_b = black_king + atk_pos_list[caseId].positions[positionId];
-
+            let point_w = {
+                    x: white_king.x + atk_pos_list[caseId].positions[positionId][0],
+                    y: white_king.y + atk_pos_list[caseId].positions[positionId][1]
+                },
+                point_b = {
+                    x: black_king.x + atk_pos_list[caseId].positions[positionId][0],
+                    y: black_king.y + atk_pos_list[caseId].positions[positionId][1]
+                }
             // check for: not being out of bounds
             if (!(0 < point_w.x && point_w.x < 7) || !(0 < point_w.y && point_w.y < 7))
                 wStopChecking = true
@@ -267,7 +398,10 @@ function checkForMate(board) {
     let isBlackLocked = false
 
     // todo: besides checking for check, see if it's possible to escape this check, or to block it.
-    // only calculated to reassure either isWhiteMated or isBlackMated, they have to be true
+    // only calculated to reassure either isWhiteMated or isBlackMated, either of them has to be true
+
+    if (!isMovePossible)
+        return boardState.INVALID
 
     let output = boardState.UNRESOLVED
 
@@ -287,54 +421,6 @@ function checkForMate(board) {
         output = boardState.INVALID
 
     return output;
-}
-
-/**
- * returns 'true' if there is space and 'false' if there is none
- * @param boardId - board's identifier hash
- * @param f_x - x of the initial position
- * @param f_y - y of the initial position
- * @param t_x - x of the desired position
- * @param t_y - y of the desired position
- * @returns {boolean} - 'true' if there is space
- */
-function checkForSpace(boardId, {f_x, f_y}, {t_x, t_y}) {
-    let board = board_db.get(boardId).board
-
-    let pieceId = board.board[f_y][f_x]
-    let targetPieceId = board.board[t_y][t_x]
-
-    let pieceCol = getColor(pieceId)
-    let targetPieceCol = getColor(targetPieceId)
-
-    let isSpace = true
-    let checkedIt = false
-
-    // initial checks before any of the loops happen
-    // is the target square opposite color? pe.B_K is the first black piece in the enum.
-    if (pieceCol === targetPieceCol) {
-        isSpace = false;
-        checkedIt = true;
-    }
-
-    // check which piece is 'piece_id' pointing to, then cast a ray in that direction
-    for (let i = 0; checkedIt === false, i < mov_vel_list; i++) {
-        for (let pieceVariant = 0; pieceVariant < mov_vel_list[i].pieces.length; pieceVariant++) {
-            // find the correct piece
-            if (mov_vel_list[i].pieces[pieceVariant] === pieceId) {
-
-                /// cast a ray until it reaches the x, y; if it doesn't, that's just bad luck.
-                // get the distance, multiply every ray by said distance,
-                // this will help us simply choose the correct ray to cast.
-                // Cast it, until the destination or an obstacle is met
-
-                checkedIt = true;
-                break;
-            }
-        }
-    }
-
-    return isSpace
 }
 
 /**
@@ -372,19 +458,14 @@ function makeBoard(whiteUser, blackUser) {
  * @returns {boardState} - an enum indicating if the move succeeded and if there is a check or a mate present
  */
 function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
-    let output;
 
-    // only checks for space
-    let isMovePossible = checkForSpace(boardId, {f_x, f_y}, {t_x, t_y})
+    // simply describes what is currently happening on the board
+    let state = checkMove(boardId, {f_x, f_y}, {t_x, t_y})
 
-    // a number (Enum), a move can mate either player, or even both at the same time
-    let isMoveMating = checkForMate(boardId)
+    // if you are causing a mate to yourself, switch to state = invalid, otherwise, return state
 
-    /// modify the board and save the results
-
-    return output;
+    return state
 }
-
 /**
  * finalizes the match creation, does not return anything
  * @param boardId - hash ID of the appropriate board
