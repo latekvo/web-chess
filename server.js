@@ -4,13 +4,13 @@
 // unfortunately, I had miscalled a lot of aspects and mechanics of chess, this could make the code unreadable,
 // but for the project to remain coherent, 'check' will keep on being called a 'mate', and a 'mate' either 'gameOver', or 'checkMate'
 
-let http = require('http');
-let events = require("events");
+let http = require('http'); // potentially unused
+let events = require("events"); // potentially unused
 let fs = require('fs');
 
 let bodyParser = require('body-parser');
 let cookieParser = require('cookie-parser');
-var bcrypt = require('bcrypt');
+let bcrypt = require('bcrypt');
 let crypto = require("crypto");
 
 /* BCRYPT QUICK REFERENCE
@@ -127,7 +127,7 @@ const blankBoardPrefab = {
     blackId: undefined,
 
     toMove: pe.WHITE,
-    moveList: [], // [ [from, to], [from, to] ]
+    moveList: [], // [ { from: [], to: [] }, { from: [], to: [] } ]
 
     gameState: undefined, // boardState enum defining current state, with UNRESOLVED being still active
 
@@ -458,12 +458,33 @@ function makeBoard(whiteUser, blackUser) {
  * @returns {boardState} - an enum indicating if the move succeeded and if there is a check or a mate present
  */
 function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
+    // NOTE that 'board' is a reference, all modifications to it are just modifications to the element in board_db
+    let board = board_db.get(boardId)
 
     // simply describes what is currently happening on the board
     let state = checkMove(boardId, {f_x, f_y}, {t_x, t_y})
 
-    // if you are causing a mate to yourself, switch to state = invalid, otherwise, return state
+    // if the move causes self to get checked, the move is invalid
+    if ( state === boardState.WHITE_CHECKD && board.toMove === pe.WHITE ||
+         state === boardState.BLACK_CHECKD && board.toMove === pe.BLACK )
+        state = boardState.INVALID
 
+    // if everything's all right
+    if (state !== boardState.INVALID) {
+        // finalize on the move
+        board.board[t_y][t_x] = board.board[f_y][f_x]
+        board.board[f_y][f_x] = pe.BLANK
+
+        // record the move
+        board.moveList.push({from: [f_x, f_y], to: [t_x, t_y]})
+
+        // and switch the next player "to move"
+        if (board.toMove === pe.BLACK) {
+            board.toMove = pe.WHITE
+        } else {
+            board.toMove = pe.BLACK
+        }
+    }
     return state
 }
 /**
@@ -478,7 +499,7 @@ function startMatch(boardId, secondPlayer) {
 app.post('/createGame', (req, res) => {
     let creatorID = undefined; // TODO: >>> get this from the request
     let whiteUser = undefined, blackUser = undefined;
-
+    
     Math.random() < 0.5 ? whiteUser = creatorID : blackUser = creatorID;
 
     // Advertise, then use makeMatch
@@ -499,37 +520,69 @@ function initGetMove(req, res) {
     //player_db.get( /**/ )
 }
 
-/**
- * will send cached GET getMove request, called right after receiving a move from an opponent
- * @param boardId - hash ID of the appropriate board
- */
-function finishGetMove(boardId) {
-
-}
-
+// only appends the httpRequest to the appropriate user
 app.get('/getMove', (req, res) => {
-    // waiting request, responded to when available, could be minutes before response
-    // cache the request, then respond only after receiving a valid move from the enemy
-    // JSON [from] [to]
+    let requesterId = req.body["userId"];
 
-    res.writeHead(200);
-    res.send();
+    if (active_users.has(requesterId)) {
+        // unintuitive, .get() actually returns a reference, not a value
+        active_users.get(requesterId).awaitedRequest = res;
+    } else {
+        res.writeHead(400) // timed out
+        res.send()
+    }
 });
 
 app.post('/makeMove', async (req, res) => {
-    let boardId, moveFrom, moveTo; // TODO: >>> get this from the request
+    let rawData = req.body
+    let userId = rawData['userId']
+    let userData = active_users.get(userId)
 
-    console.log("OK: move made: " + {boardId, moveFrom, moveTo});
+    // user timed out
+    if (userData === undefined) {
+        res.write({error: errorCode.SESSION_TIMED_OUT})
+        res.writeHead(400)
+        res.send()
+        return
+    }
 
-    if (await makeMove(boardId, moveFrom, moveTo)) {
-        res.writeHead(200);
-    }   else {
+    let boardId = userData.currentBoardId
+    let boardCp = board_db.get(boardId)
+
+    let moveStatus = await makeMove(boardId, rawData['moveFrom'], rawData['moveTo'])
+    if (moveStatus !== boardState.INVALID) {
+        let opponentId
+
+        // determine color of the opponent
+        if (userId === boardCp.whiteId)
+            opponentId = boardCp.blackId
+        else
+            opponentId = boardCp.whiteId
+
+        // send back the cached request
+        if (active_users.has(opponentId)) {
+
+            active_users.get(opponentId).awaitedRequest.writeHead(200)
+            active_users.get(opponentId).awaitedRequest.write({
+                moveFrom: rawData['moveFrom'],
+                moveTo: rawData['moveTo']
+            })
+            active_users.get(opponentId).awaitedRequest.send()
+
+            res.writeHead(200)
+        } else {
+            res.writeHead(400)
+            res.write({error: errorCode.MATCH_ENDED}) // later specify 'abandoned by X'
+        }
+
+    } else {
         // move could not be made
-        res.writeHead(400);
+        res.write({error: errorCode.BAD_REQUEST})
+        res.writeHead(400)
     }
 
     // 200 or 400
-    res.send();
+    res.send()
 });
 
 app.post('/register', (req, res) => {
@@ -548,7 +601,7 @@ app.post('/register', (req, res) => {
     });
 
     // add the account
-    player_db.set(email, newUser)
+    user_db.set(email, newUser)
 
     // and respond with the landing page
     res.write(fs.readFileSync('client/index.html', 'utf8'))
