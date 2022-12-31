@@ -4,8 +4,8 @@
 // unfortunately, I had miscalled a lot of aspects and mechanics of chess, this could make the code unreadable,
 // but for the project to remain coherent, 'check' will keep on being called a 'mate', and a 'mate' either 'gameOver', or 'checkMate'
 
-let http = require('http'); // potentially unused
-let events = require("events"); // potentially unused
+//let http = require('http'); // potentially unused
+//let events = require("events"); // potentially unused
 let fs = require('fs');
 
 let bodyParser = require('body-parser');
@@ -35,19 +35,21 @@ let app = express();
 
 // standard mutex lock
 // basic syntax: lock.[read|write]Lock('lock's key', function (freeLock) { /// freeLock(); } )
-let ReadWriteLock = require('rwlock');
-let lock = new ReadWriteLock();
+//let ReadWriteLock = require('rwlock');
+//let lock = new ReadWriteLock();
 
 app.use(express.static(__dirname + '/client/'));
 app.use(bodyParser.urlencoded({extended : true}));
 app.use(cookieParser());
 
-const board_db = new Map([]); // stores current board state bound to match's id
-const open_matches_db = []; // array of awaiting matches
-const user_db = new Map([]); // stores stats bound to email, so that a user can be quickly looked up
-const active_users = new Map([]) // stores session-keys and accounts associated with them
+const board_db = new Map(); // stores current board state bound to match's id
+const open_matches_db = new Set(); // set of awaiting matches
+const user_db = new Map(); // stores stats bound to email, so that a user can be quickly looked up
+const active_users = new Map() // stores session-keys and accounts associated with them
 
 let boardState = {
+    NOT_STARTED: -2,
+
     INVALID: -1, // some of those cases are overlapping, if they are it's an 'illegal move' anyway for the mover, even if it had been a win
 
     UNRESOLVED: 0, // still ongoing
@@ -127,8 +129,9 @@ const blankBoardPrefab = {
     blackId: undefined,
 
     toMove: pe.WHITE,
-    moveList: [], // [ { from: [], to: [] }, { from: [], to: [] } ]
+    moveList: [], // [ { time: x, from: [], to: [] }, { time: x, from: [], to: [] } ]
 
+    timeStarted: Date,
     gameState: undefined, // boardState enum defining current state, with UNRESOLVED being still active
 
     board: [
@@ -143,6 +146,7 @@ const blankBoardPrefab = {
     ]
 }
 
+// fill in the rows 1 through 7
 for (let y = 1; y < 7; y++) {
     for (let x = 1; x < 8; x++) {
         blankBoardPrefab.board[y].push(blankBoardPrefab.board[y][0])
@@ -437,13 +441,11 @@ function makeBoard(whiteUser, blackUser) {
     newBoard.boardId = boardId
     newBoard.whiteId = whiteUser
     newBoard.blackId = blackUser
+    newBoard.gameState = boardState.NOT_STARTED
 
-    lock.writeLock('board_db', function (release) {
-        // 16.12: removed references to board_db.json
+    // NOTE: removed mutex functionality, it may have been necessary, will find out eventually
 
-        board_db.set(boardId, newBoard)
-
-    });
+    board_db.set(boardId, newBoard)
 
     return boardId;
 }
@@ -479,46 +481,109 @@ function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
         board.moveList.push({from: [f_x, f_y], to: [t_x, t_y]})
 
         // and switch the next player "to move"
-        if (board.toMove === pe.BLACK) {
-            board.toMove = pe.WHITE
-        } else {
+        if (board.toMove === pe.WHITE) {
             board.toMove = pe.BLACK
+        } else {
+            board.toMove = pe.WHITE
+        }
+
+        // start the game for real if it's not started yet and add a timestamp
+        if (board.gameState === boardState.NOT_STARTED) {
+            board.gameState = boardState.UNRESOLVED
+
         }
     }
-    return state
-}
-/**
- * finalizes the match creation, does not return anything
- * @param boardId - hash ID of the appropriate board
- * @param secondPlayer - introduced player's ID hash
- */
-function startMatch(boardId, secondPlayer) {
 
+    return state
 }
 
 app.post('/createGame', (req, res) => {
-    let creatorID = undefined; // TODO: >>> get this from the request
+    let creatorId = req.body["userId"]
     let whiteUser = undefined, blackUser = undefined;
-    
-    Math.random() < 0.5 ? whiteUser = creatorID : blackUser = creatorID;
+
+    if (Math.random() < 0.5)
+        whiteUser = creatorId
+    else
+        blackUser = creatorId
 
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
-    let boardID = makeBoard(whiteUser, blackUser);
+    let boardId = makeBoard(whiteUser, blackUser);
 
-    res.write(JSON.stringify({boardID: boardID}))
+    res.write(JSON.stringify({color: requesterColor, boardId: boardId}))
     res.writeHead(200)
     res.send()
 });
 
-/**
- * will cache GET getMove request, based on who requested it
- * @param req - http request
- * @param res - http response, to be cached
- */
-function initGetMove(req, res) {
-    //player_db.get( /**/ )
-}
+// creator of the game has to call /joinGame as well, it will make him wait for an opponent to show up
+app.post('/joinGame', (req, res) => {
+    let userId = req.body["userId"]
+    let user = user_db.get(userId)
+
+    let boardId = req.body["boardId"]
+    let board = board_db.get(boardId)
+
+    let requesterColor = undefined
+
+    if (user === undefined) {
+        res.write(JSON.stringify({error: errorCode.SESSION_TIMED_OUT}))
+        res.writeHead(400)
+        res.send()
+
+        return
+    }
+
+    if (board === undefined) {
+        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
+        res.writeHead(400)
+        res.send()
+
+        return
+    }
+
+    user.currentBoardId = boardId
+
+    // user === creator
+    if (userId === board.whiteId || userId === board.blackId) {
+        // if the user is also the creator, cache his request and send it back as soon as an opponent joins
+        user.awaitedRequest = res
+
+        // only now do we actually advertise, to avoid opponent somehow joining the game before the creator
+        open_matches_db.add(boardId)
+
+    } else { // user === random joining player
+
+        // this check will be triggered only if both of the players collaborate to deliberately crash/bug the server
+        // todo: implement ban system
+        if (!open_matches_db.has(boardId)) {
+            res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
+            res.writeHead(400)
+            res.send()
+        }
+
+        let creatorId
+
+        // fill in the remaining spot in the
+        if (board.whiteId === undefined) {
+            board.whiteId = userId
+            requesterColor = pe.WHITE
+            creatorId = board.blackId
+        } else {
+            board.blackId = userId
+            requesterColor = pe.BLACK
+            creatorId = board.whiteId
+        }
+
+        // send back an OK to the board creator to make/get move
+        creatorId.awaitedRequest.write()
+        creatorId.awaitedRequest.writeHead(200)
+        creatorId.awaitedRequest.send()
+    }
+
+    res.write(JSON.stringify({color: requesterColor}))
+    res.writeHead(200)
+    res.send()
+});
 
 // only appends the httpRequest to the appropriate user
 app.get('/getMove', (req, res) => {
@@ -586,7 +651,7 @@ app.post('/makeMove', async (req, res) => {
 });
 
 app.post('/register', (req, res) => {
-    let {email, username, password, passwordRepeat} = req.body
+    let {email, username, password /*, passwordRepeat*/} = req.body
 
     // password repeat should be checked locally, and the 'register' button should just get greyed out
 
@@ -619,6 +684,6 @@ app.get('/', function (req, res) {
 // load main db
 // TODO: >>> implement auto-saving every move, ideally running on a separate thread
 
+app.listen(3000);
 
-let server = app.listen(3000);
 console.log("server started on port: 3000");
