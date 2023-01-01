@@ -42,6 +42,7 @@ app.use(express.static(__dirname + '/client/'));
 app.use(bodyParser.urlencoded({extended : true}));
 app.use(cookieParser());
 
+const usernameToEmail = new Map(); // user's username may change
 const board_db = new Map(); // stores current board state bound to match's id
 const open_matches_db = new Set(); // set of awaiting matches
 const user_db = new Map(); // stores stats bound to email, so that a user can be quickly looked up
@@ -90,10 +91,12 @@ let blankActiveUserPrefab = {
 }
 
 let blankPlayerPrefab = {
-    // email is the key, it's not stored here
+    // email is the key, but will be stored here anyway to make it easier to access it
 
+    email: undefined,
     username: undefined,
-    password: undefined, // a hash of the password
+    passwordHash: undefined,
+    passwordSalt: undefined,
 
     rank: 1500
 }
@@ -650,6 +653,52 @@ app.post('/makeMove', async (req, res) => {
     res.send()
 });
 
+app.post('/login', (req, res) => {
+    let {usernameOrEmail, password} = req.body
+
+    // username may also be an email
+
+    // log in by email
+    let user = user_db.get(usernameOrEmail)
+    let email = usernameOrEmail
+
+    // log in by username
+    if (user === undefined) {
+        email = usernameToEmail.get(usernameOrEmail)
+        user = user_db.get(email)
+    }
+
+    // invalid username
+    if (user === undefined) {
+        res.write(fs.readFileSync('client/login.html', 'utf8'))
+        res.writeHead(400)
+        res.send()
+        return
+    }
+
+    bcrypt.hash(password, user.passwordSalt, function(err, hash) {
+        if (hash === user.passwordHash) {
+
+            // note: if this isn't clear yet, userId IS A random, PRIVATE SESSION TOKEN
+            let newUserId = crypto.randomBytes(32).toString('hex')
+
+            // login the account
+            active_users.set(newUserId, email)
+
+            res.cookie('userId', newUserId)
+
+            res.write(fs.readFileSync('client/index.html', 'utf8'))
+            res.writeHead(200)
+            res.send()
+        } else {
+            // invalid password
+            res.write(fs.readFileSync('client/login.html', 'utf8'))
+            res.writeHead(400)
+            res.send()
+        }
+    });
+});
+
 app.post('/register', (req, res) => {
     let {email, username, password /*, passwordRepeat*/} = req.body
 
@@ -661,12 +710,14 @@ app.post('/register', (req, res) => {
     // gen salt, hash the password
     bcrypt.genSalt(10, function(err, salt) {
         bcrypt.hash(password, salt, function(err, hash) {
-            newUser.password = hash
+            newUser.passwordSalt = salt
+            newUser.passwordHash = hash
         });
     });
 
     // add the account
     user_db.set(email, newUser)
+    usernameToEmail.set(username, email)
 
     // and respond with the landing page
     res.write(fs.readFileSync('client/index.html', 'utf8'))
@@ -682,7 +733,7 @@ app.get('/', function (req, res) {
 });
 
 // load main db
-// TODO: >>> implement auto-saving every move, ideally running on a separate thread
+// TODO: >>> implement auto-saving every move, ideally running on a separate thread (saving to a file)
 
 app.listen(3000);
 
