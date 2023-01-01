@@ -5,6 +5,7 @@
     <title id="title">Chess</title>
 
     <link rel="stylesheet" type="text/css" href="style.css"/>
+    <script src="constants.js"></script>
     <script src="main.js"></script>
 
 </head>
@@ -17,8 +18,13 @@
             </div>
         </div>
         <div id="game-menu" class="flex-item flex-container">
-            <div id="user-data" class="flex-item">
+            <div id="user-data" class="flex-item flex-container">
+                <a href="register.html" id="register" class="flex-item flex-container">
 
+                </a>
+                <a href="login.html" id="login" class="flex-item flex-container">
+
+                </a>
             </div>
             <div id="game-list" class="flex-item">
 
@@ -26,9 +32,18 @@
         </div>
     </div>
 
+    <div id="popup-window" style="opacity: 0">
+        <div id="popup-window-text">
+
+        </div>
+        <button id="popup-window-close">
+            OK
+        </button>
+    </div>
+
     <script>
-        createBoard();
-        init();
+        localPlayingField = blankBoardPrefab // dbg only
+        drawBoard()
     </script>
 
 </body>

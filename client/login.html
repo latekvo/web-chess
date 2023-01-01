@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title id="title">Register | Web-chess</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+
+</head>
+<body>
+<div class="background">
+  <div class="register-background"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+
+
+  <!-- Overlaying elements -->
+  <div class="register-box">
+    <div class="register-header">
+      <b>Login</b>
+    </div>
+    <div class="login-inputs">
+
+      <form action="login" method="POST">
+        <!-- on clicking the register button, a full redirect will occur -->
+
+        <div class="register-field">
+          <label for="login-username"><b>Username or Email</b></label>
+          <input type="text" id="login-username" name="usernameOrEmail" required>
+        </div>
+
+        <div class="register-field">
+          <label for="login-password"><b>Password</b></label>
+          <input type="password" id="login-password" name="password" required>
+        </div>
+
+        <div class="register-field">
+          <button class="login-button" id="login-register" type="submit">
+            Login
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
