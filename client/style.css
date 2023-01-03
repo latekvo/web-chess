@@ -37,18 +37,13 @@ body {
     margin: 0;
 }
 
-#game-menu {
-    width: 20vw;
-    margin-left: 1vw;
-    flex-direction: column;
-}
-
 #user-data {
     width: 90%;
     height: 30%;
     margin: 1vw;
 
-    background-color: tomato; /* todo: remove */
+    flex-direction: column;
+    background-color: var(--darktone); /* todo: remove */
 
 }
 
@@ -262,4 +257,51 @@ input[type="text"], input[type="password"], input[type="email"] {
     -webkit-user-drag: none;
     -webkit-user-select: none;
     -ms-user-select: none;
+}
+
+
+.menu-button {
+    height: 5vh;
+    width: 10vw;
+
+}
+
+a {
+    display: block;
+}
+
+#game-menu {
+    background-color: var(--midtone);
+
+    width: 20vw;
+    margin-left: 1vw;
+    flex-direction: column;
+
+    font-size: 1vw;
+    color: white;
+}
+
+#user-details {
+    padding: 0.7vw;
+    background-color: var(--darktone);
+}
+
+#go-login {
+    background-color: var(--lighttone);
+}
+
+#go-logout {
+    background-color: var(--badlight);
+    margin-bottom: 3vh;
+}
+
+#go-register {
+    background-color: var(--marklight);
+}
+
+img {
+    padding: 0;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
 }
