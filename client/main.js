@@ -33,30 +33,60 @@ function moveStart(e) {
 }
 
 // get other field, and move the piece there
-function moveEnd(e, startPos_x, startPos_y, endPos_x, endPos_y) {
+// this is absolutely ((not smart)), we can just check the id of the clicked element
+/* sample code:
+// wrapper is a div containing all the desired buttons or chessfields
+const wrapper = document.getElementById('wrapper');
+
+wrapper.addEventListener('click', (event) => {
+  // don't check for this in the chessField checks of course
+  const isButton = event.target.nodeName === 'BUTTON';
+  if (!isButton) {
+    return;
+  }
+
+  console.dir(event.target.id);
+})
+ */
+function moveEnd(e, fieldSize, fieldStart_x, fieldStart_y) {
     // based on field size, get both the selected chess fields and move the piece from one to another
+    // we need to find both
 
     // TODO: iterate differently depending on your color
 
-    let x_pos = undefined, y_pos = undefined // html id
-    let x_real = undefined, y_real = undefined // array coords
+    let x_real_dst = undefined, y_real_dst = undefined,
+        x_real_src = undefined, y_real_src = undefined // array coords
+    let x_visual_dst = undefined, y_visual_dst = undefined,
+        x_visual_src = undefined, y_visual_src = undefined // html id
 
+    // iterate through every square and check if it's coords match up e.clientX/Y (mouse) coords
+    // execute the same checks for initPos_x/y global variables
     for (let x = 0; x < 8; x++) {
 
-        x_pos = x + 1
     }
 
     for (let y = 0; y < 8; y++) {
-        y_pos = String.fromCharCode('a'.charCodeAt(0) + y)
     }
 
     // just in case
-    if (x_pos === undefined || y_pos === undefined) {
+    if (x_real_dst === undefined || y_real_dst === undefined) {
         isClicked = false
-        return
-    }
+    } else {
 
-    // move the img and submit the move
+        if (localPieceColor === pe.WHITE) {
+            x_visual_dst = String.fromCharCode('a'.charCodeAt(0) + x_real_dst)
+            y_visual_dst = String(8 - y_real_dst);
+        } else {
+            x_visual_dst = String.fromCharCode('h'.charCodeAt(0) - x_real_dst)
+            y_visual_dst = String(y_real_dst + 1);
+        }
+
+        // move piece
+        document.getElementById(x_visual_dst + y_visual_dst).innerHTML =
+            document.getElementById(x_visual_src + y_visual_src).innerHTML
+
+
+    }
 
 
 }
@@ -98,10 +128,9 @@ function boardClickListener(e) {
     }
 
     console.log('click!')
-    console.log(e.clientY)
 
     if (isClicked)
-        moveEnd(e)
+        moveEnd(e, fieldSize, fieldPosA[0], fieldPosA[1])
     else
         moveStart(e)
 }
