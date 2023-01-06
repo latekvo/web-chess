@@ -4,11 +4,32 @@ let localPlayingField = []
 let localMoveList = []
 let localPieceColor = pe.WHITE
 let localBoardId = undefined
+let localOpponentUsername = undefined
 
 let localUserId = undefined
+let localUsername = undefined
 
 let initPos_x, initPos_y
 let isClicked = false
+
+// right after loading, before doing anything, check if the user is logged in
+// for now, the only cookie can be the userId, so we can use this simplified function
+let cookie = document.cookie
+if (cookie.length > 2) {
+    localUserId = cookie.split('=')[1]
+}
+
+let getMyUsernameRequest = new XMLHttpRequest();
+
+getMyUsernameRequest.onreadystatechange = function () {
+    console.log("received user's username")
+    if (getMyUsernameRequest.status === 200)
+        localUsername = JSON.parse(getMyUsernameRequest.responseText)["username"]
+}
+
+if (localUserId !== undefined) {
+    getMyUsernameRequest.open("GET", '/sayMyName/' + localUserId)
+}
 
 function getPositionById(id) {
     let domObject = document.getElementById(id);
@@ -48,102 +69,27 @@ wrapper.addEventListener('click', (event) => {
   console.dir(event.target.id);
 })
  */
-function moveEnd(e, fieldSize, fieldStart_x, fieldStart_y) {
-    // based on field size, get both the selected chess fields and move the piece from one to another
-    // we need to find both
-
-    // TODO: iterate differently depending on your color
-
-    let x_real_dst = undefined, y_real_dst = undefined,
-        x_real_src = undefined, y_real_src = undefined // array coords
-    let x_visual_dst = undefined, y_visual_dst = undefined,
-        x_visual_src = undefined, y_visual_src = undefined // html id
-
-    // iterate through every square and check if it's coords match up e.clientX/Y (mouse) coords
-    // execute the same checks for initPos_x/y global variables
-    for (let x = 0; x < 8; x++) {
-
-    }
-
-    for (let y = 0; y < 8; y++) {
-    }
-
-    // just in case
-    if (x_real_dst === undefined || y_real_dst === undefined) {
-        isClicked = false
-    } else {
-
-        if (localPieceColor === pe.WHITE) {
-            x_visual_dst = String.fromCharCode('a'.charCodeAt(0) + x_real_dst)
-            y_visual_dst = String(8 - y_real_dst);
-        } else {
-            x_visual_dst = String.fromCharCode('h'.charCodeAt(0) - x_real_dst)
-            y_visual_dst = String(y_real_dst + 1);
-        }
-
-        // move piece
-        document.getElementById(x_visual_dst + y_visual_dst).innerHTML =
-            document.getElementById(x_visual_src + y_visual_src).innerHTML
-
-
-    }
+function moveEnd(e) {
+    // based on field size, get both the selected chess fields and move the piece from one to anotherwe need to find both
 
 
 }
 
 // only checks for bounds, then passes all data along accordingly to the current state of 'isClicked'
 function boardClickListener(e) {
-    // get field's size & mouse pos, compare them
-    // cancel move (isClicked = false) if it's the same square
-    let mousePos_x = e.clientX,
-        mousePos_y = e.clientY
-
-    // get position of the 0,0 chess field, and the 1,1 chess field, to calculate a single field's size
-
-    let fieldPosA, fieldPosB
-
-    if (localPieceColor === pe.WHITE) {
-        fieldPosA = getPositionById("a8")
-        fieldPosB = getPositionById("b7")
-    } else {
-        fieldPosA = getPositionById("h1")
-        fieldPosB = getPositionById("g2")
-    }
-
-    let pos_start_x = fieldPosA[0]
-    let pos_start_y = fieldPosA[1]
-
-    let fieldSize = fieldPosB[0] - fieldPosA[0]
-
-    let rbCorner_x = fieldPosA[0] + fieldSize * 8,
-        rbCorner_y = fieldPosA[1] + fieldSize * 8
-
-    // note: for y, higher on page = lower number
-
-    // check for out of bounds clicks
-    if (mousePos_x < pos_start_x || mousePos_x > rbCorner_x ||
-        mousePos_y < pos_start_y || mousePos_y > rbCorner_y) {
-        isClicked = false
-        return
-    }
-
-    console.log('click!')
-
     if (isClicked)
-        moveEnd(e, fieldSize, fieldPosA[0], fieldPosA[1])
+        moveEnd(e)
     else
         moveStart(e)
 }
 
 // clicking anywhere on the doc will (should) check for mouse pos
-document.onmousedown = boardClickListener
-
 function drawBoard() {
 
     // for some reason the '/div' gets added automatically, I cannot control it.
     let html_new_row = '<div class="chess-row flex-container" id="',
         html_end_row = '">',
-        html_new_cell = '<div class="chess-box" id="',
+        html_new_cell = '<div class="chess-box" data-x="0" data-y="0" id="',
         html_end_cell = '">'
 
     document.getElementById('game-board').innerHTML = ""
@@ -158,8 +104,8 @@ function drawBoard() {
         // real - in the array
         // visual - on the html board
 
-        let ver_visual = String(ver + 1);
-        document.getElementById('game-board').innerHTML += (html_new_row + ver_visual + html_end_row);
+        let ver_visual = String(ver + 1)
+        document.getElementById('game-board').innerHTML += (html_new_row + ver_visual + html_end_row)
 
         for (let h_it = 0; h_it < 8; h_it++) {
 
@@ -215,17 +161,22 @@ function drawBoard() {
                     break
             }
 
+            let html_row = document.getElementById(ver_visual)
+
+            let id = hor_visual + ver_visual
+            html_row.innerHTML += html_new_cell + id + html_end_cell
+
+            let newlyAddedCell = document.getElementById(id)
+
+            newlyAddedCell.dataset.x = String(h_it)
+            newlyAddedCell.dataset.y = String(v_it)
+
             let rawFilename = filename
             filename = 'resources/' + filename + '.png'
-
             console.log('loaded file: ' + filename)
 
             let html_piece_new_img = '<img draggable="false" (dragstart)="false;" class="piece-img" src="'
             let html_piece_end_img = '">'
-
-
-            document.getElementById(ver_visual).innerHTML += (html_new_cell + hor_visual + ver_visual + html_end_cell);
-            let id = ver_visual + hor_visual;
 
             if (rawFilename !== undefined) {
                 console.log('loading texture to: ' + hor_visual + ver_visual)
@@ -235,6 +186,30 @@ function drawBoard() {
             console.log(id);
         }
     }
+
+    const fields = document.querySelectorAll('.chessboard');
+
+    // At last, add a click event listener to each field
+    fields.forEach(field => {
+        field.addEventListener('click', event => {
+            // The field that was clicked is the event target
+            const clickedField = event.target;
+
+            // You can get the chess position of the clicked field by using the `dataset` property
+            let position_x = parseInt(clickedField.dataset.x),
+                position_y = parseInt(clickedField.dataset.y)
+
+            if (!isClicked) {
+                isClicked = true
+                initPos_x = position_x
+                initPos_y = position_y
+            } else {
+                isClicked = false
+            }
+
+        });
+    });
+
 }
 
 /* IMPLEMENTATION WILL BE SUSPENDED FOR THE TIME BEING
@@ -251,10 +226,52 @@ function getTemporaryId() {
 }
 */
 
+function getOpenMatches() {
+    // Send a GET request to the server
+    fetch('/games')
+        .then(response => response.json())
+        .then(matches => {
+
+            let matchList = document.getElementById('match-list')
+
+            // matches is an array, [{boardId, playerId, playerRating}, ..., ...]
+            matches.forEach(match => {
+                // get all the params and fill the open games with them
+
+                const listItem = document.createElement('li');
+                listItem.classList.add('match');
+
+                const boardId = document.createElement('div');
+                boardId.classList.add('match-board-id');
+                boardId.textContent = `Board ID: ${match.boardId}`;
+
+                const playerId = document.createElement('div');
+                playerId.classList.add('match-player-id');
+                playerId.textContent = `Player ID: ${match.username}`;
+
+                const playerRating = document.createElement('div');
+                playerRating.classList.add('match-player-rating');
+                playerRating.textContent = `Player Rating: ${match.rank}`;
+
+                listItem.appendChild(boardId);
+                listItem.appendChild(playerId);
+                listItem.appendChild(playerRating);
+
+                matchList.appendChild(listItem);
+            })
+        })
+}
+
+// Check for matches every 4 seconds
+setInterval(getOpenMatches, 4000)
+
 let joinGameRequest = new XMLHttpRequest();
 
 joinGameRequest.onreadystatechange = function () {
+    if (createGameRequest.status === 200) {
+        let rawData = JSON.parse(createGameRequest.responseText);
 
+    }
 };
 
 // POST /joinGame {userId, boardId}
@@ -263,16 +280,20 @@ function joinGame() {
     body.set('userId', localUserId)
     body.set('boardId', localBoardId)
 
-    createGameRequest.open("GET", "/joinGame", true)
+    createGameRequest.open("POST", "/joinGame", true)
     createGameRequest.send(body)
 }
 
 let createGameRequest = new XMLHttpRequest();
 
 createGameRequest.onreadystatechange = function () {
-    let rawData = JSON.parse(createGameRequest.responseText);
+    if (createGameRequest.status === 200) {
+        let rawData = JSON.parse(createGameRequest.responseText);
 
-    localBoardId = rawData["boardId"]
+        localBoardId = rawData["boardId"]
+
+        joinGame()
+    }
 };
 
 // POST /createGame {userId}
@@ -280,9 +301,11 @@ function createGame() {
     let body = new FormData()
     body.set('userId', localUserId)
 
-    createGameRequest.open("GET", "/createBoard", true)
+    createGameRequest.open("POST", "/createGame", true)
     createGameRequest.send(body)
 }
+
+document.getElementById('new-game-btn').addEventListener('click', createGame)
 
 function drawLoginInfo() {
     let loginInfoNotLoggedInPage =
@@ -293,8 +316,14 @@ function drawLoginInfo() {
         '    <button id="go-login" class="flex-item menu-button">LOGIN</button>' +
         '</a>'
 
+    let boardDataText =
+        'Current match: ${localBoardId}<br>Current opponent:  ${localOpponentUsername}<br>'
+
+    if (localBoardId === undefined)
+        boardDataText = ""
+
     let loginInfoLoggedInPage =
-        '<div id="user-details" class="flex-item">Username: [USERNAME]<br>Current match: [BOARD_ID]<br>Current opponent: [OPP_USERNAME]<br></div>' +
+        '<div id="user-details" class="flex-item">Username: ' + localUsername + '<br>' + boardDataText + '</div>' +
         '<button id="go-logout" class="flex-item menu-button">LOGOUT</button>'
 
     if (localUserId === undefined) {
@@ -302,6 +331,18 @@ function drawLoginInfo() {
     } else {
         // todo: fill in the blanks
         document.getElementById('user-data').innerHTML = loginInfoLoggedInPage
+
+        document.getElementById('go-logout').addEventListener('click', () => {
+            // clear cookies, reload page, sadly just setting cookies to "" doesn't work
+            let cookies = document.cookie.split(';')
+            let expiryString = "=;expires=" + new Date(0).toUTCString()
+
+            cookies.forEach((cookie) => {
+                document.cookie = cookie + expiryString
+            })
+
+            history.go(0) // go to current page
+        })
     }
 
 }

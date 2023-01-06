@@ -52,10 +52,9 @@ body {
     height: 70%;
 
     margin: 0 1vw 1vw 1vw;
+    flex-direction: column;
 
-    overflow: scroll;
-
-    background-color: tomato; /* todo: remove */
+    background-color: var(--darktone); /* todo: remove */
 }
 
 #outer-game-board {
@@ -304,4 +303,47 @@ img {
     display: block;
     margin-left: auto;
     margin-right: auto;
+}
+
+.game-entry {
+    background-color: var(--darktone);
+    height: 13vh;
+    width: 100%;
+    text-align: left;
+    font-size: 1vw;
+    flex-direction: column;
+    margin-bottom: 2vh;
+}
+
+.new-row {
+    display: block;
+
+}
+
+#match-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow: scroll;
+}
+
+.match {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #ccc;
+}
+
+.match-board-id,
+.match-player-id,
+.match-player-rating {
+    flex: 1;
+    margin-right: 10px;
+}
+
+#new-game-btn {
+    display: block;
+    vertical-align: top;
+    margin: auto;
+    margin-top: 2vh;
 }

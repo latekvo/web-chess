@@ -22,6 +22,7 @@ bcrypt.genSalt(10, function(err, salt) {
     });
 });
 
+// todo: if password checking in the login section won't work, use this instead
 // To check your password,
 bcrypt.compare("B4c0/\/", hash, function(err, res) {
     // res === true
@@ -493,7 +494,6 @@ function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
         // start the game for real if it's not started yet and add a timestamp
         if (board.gameState === boardState.NOT_STARTED) {
             board.gameState = boardState.UNRESOLVED
-
         }
     }
 
@@ -502,19 +502,30 @@ function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 
 app.post('/createGame', (req, res) => {
     let creatorId = req.body["userId"]
-    let whiteUser = undefined, blackUser = undefined;
 
-    if (Math.random() < 0.5)
+    if (active_users.has(creatorId) === false) {
+        res.writeHead(400)
+        res.send()
+        return
+    }
+
+    let whiteUser = undefined, blackUser = undefined;
+    let requesterColor
+
+    if (Math.random() < 0.5) {
         whiteUser = creatorId
-    else
+        requesterColor = pe.WHITE
+    } else {
         blackUser = creatorId
+        requesterColor = pe.BLACK
+    }
 
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
     let boardId = makeBoard(whiteUser, blackUser);
 
-    res.write(JSON.stringify({color: requesterColor, boardId: boardId}))
     res.writeHead(200)
+    res.write(JSON.stringify({color: requesterColor, boardId: boardId}))
     res.send()
 });
 
@@ -529,16 +540,15 @@ app.post('/joinGame', (req, res) => {
     let requesterColor = undefined
 
     if (user === undefined) {
-        res.write(JSON.stringify({error: errorCode.SESSION_TIMED_OUT}))
         res.writeHead(400)
+        res.write(JSON.stringify({error: errorCode.SESSION_TIMED_OUT}))
         res.send()
 
         return
     }
-
     if (board === undefined) {
-        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
         res.writeHead(400)
+        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
         res.send()
 
         return
@@ -589,7 +599,7 @@ app.post('/joinGame', (req, res) => {
 });
 
 // only appends the httpRequest to the appropriate user
-app.get('/getMove', (req, res) => {
+app.post('/getMove', (req, res) => {
     let requesterId = req.body["userId"];
 
     if (active_users.has(requesterId)) {
@@ -670,8 +680,8 @@ app.post('/login', (req, res) => {
 
     // invalid username
     if (user === undefined) {
-        res.write(fs.readFileSync('client/login.html', 'utf8'))
         res.writeHead(400)
+        res.write(fs.readFileSync('client/login.html', 'utf8'))
         res.send()
         return
     }
@@ -687,13 +697,13 @@ app.post('/login', (req, res) => {
 
             res.cookie('userId', newUserId)
 
-            res.write(fs.readFileSync('client/index.html', 'utf8'))
             res.writeHead(200)
+            res.write(fs.readFileSync('client/index.html', 'utf8'))
             res.send()
         } else {
             // invalid password
-            res.write(fs.readFileSync('client/login.html', 'utf8'))
             res.writeHead(400)
+            res.write(fs.readFileSync('client/login.html', 'utf8'))
             res.send()
         }
     });
@@ -701,6 +711,9 @@ app.post('/login', (req, res) => {
 
 app.post('/register', (req, res) => {
     let {email, username, password /*, passwordRepeat*/} = req.body
+
+    // todo: ONLY FOR TESTING, REMOVE THIS LINE ASAP
+    console.log({email, username, password})
 
     // password repeat should be checked locally, and the 'register' button should just get greyed out
 
@@ -724,17 +737,85 @@ app.post('/register', (req, res) => {
     res.send()
 });
 
+// too little info for this to be used for now
+app.get('/player/:name', function (req, res) {
+    let playerName = req.params.name
+
+    let player_email = usernameToEmail.get(playerName)
+
+    if (player_email === undefined) {
+        res.writeHead(400)
+        res.write({error: errorCode.BAD_REQUEST})
+        res.send()
+        return
+    }
+
+    let player = user_db.get(player_email)
+
+    res.writeHead(200);
+    res.write({username: player.username, rank: player.rank});
+    res.send();
+});
+
+// a request for some open games on the list
+app.get('/games', function (req, res) {
+    let maxResponseLength = 16 // temporary hardcoded limit to how many games can be advertised at a time
+
+    let games = []
+
+    for (let i = 0; i < maxResponseLength; i++) {
+        // add boardId, username, rank
+    }
+
+    res.writeHead(200);
+    res.write(JSON.stringify(games));
+    res.send();
+});
+
 // how do I send multiple files? when another file is linked to index.html, the request for it is auto sent to the server
 // I need to respond to /style.css get request with style.css file. this is done automatically if I use .static() function
 app.get('/', function (req, res) {
     res.writeHead(200);
     res.write(fs.readFileSync('client/index.html', 'utf8'));
     res.send();
-});
+})
+
+// misc, this doesn't work, todo: look into why is that
+app.get('/favicon.ico', function (req, res) {
+    res.writeHead(200);
+    res.write(fs.readFileSync('client/resources/favicon.ico'));
+    res.send();
+})
+
+app.get('/sayMyName/:id', function (req, res) {
+    let userMail = active_users.get(req.params.id)
+
+    if (userMail === undefined) {
+        res.writeHead(400)
+        res.send()
+        return
+    }
+
+    let user = user_db.get(userMail)
+
+    if (user === undefined) {
+        res.writeHead(400)
+        res.send()
+        return
+    }
+
+    let username = user.username
+
+    res.writeHead(400)
+    res.write(JSON.stringify({username: username}))
+    res.send()
+})
 
 // load main db
 // TODO: >>> implement auto-saving every move, ideally running on a separate thread (saving to a file)
 
-app.listen(3000);
+let port = 3000
 
-console.log("server started on port: 3000");
+app.listen(port)
+
+console.log("server started on port: " + port);

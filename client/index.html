@@ -5,9 +5,9 @@
     <title id="title">Chess</title>
 
     <link rel="stylesheet" type="text/css" href="style.css"/>
-    <script src="constants.js"></script>
-    <script src="main.js"></script>
 
+    <script src="constants.js"></script>
+    <script src="utility.js"></script>
 </head>
 <body>
     <div id="content" class="flex-container">
@@ -19,14 +19,16 @@
         </div>
         <div id="game-menu" class="flex-item flex-container">
             <div id="user-data" class="flex-item flex-container">
-                <a href="register.html" id="register" class="flex-item flex-container">
-
-                </a>
-                <a href="login.html" id="login" class="flex-item flex-container">
-
-                </a>
+                <!-- autofilled by js -->
             </div>
+            <!-- todo: overflow hides items above itself making them unaccessible if there are too many added -->
             <div id="game-list" class="flex-item">
+                <button id="new-game-btn" class="menu-button">CREATE NEW</button>
+
+                <ul id="match-list">
+                    <!-- The list items will be added here -->
+
+                </ul>
 
             </div>
         </div>
@@ -34,15 +36,24 @@
 
     <div id="popup-window" style="opacity: 0">
         <div id="popup-window-text">
-
+            <!-- autofilled by js -->
         </div>
         <button id="popup-window-close">
             OK
         </button>
     </div>
 
+    <!-- I know it may be seen as a bad practice to insert scripts at the bottom of the html file,
+         but for now it's simply more convenient this way,
+         since all static elements are surely initialized past this point
+         -->
+
+    <script src="main.js"></script>
+
     <script>
-        localPlayingField = blankBoardPrefab // dbg only
+
+        drawLoginInfo()
+        localPlayingField = blankBoardPrefab
         drawBoard()
     </script>
 
