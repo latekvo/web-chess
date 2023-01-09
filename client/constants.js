@@ -25,13 +25,13 @@ let boardState = {
 const errorCode = {
 
     INVALID_LOGIN: 0,
-    INVALID_PASSWORD: 0,
+    INVALID_PASSWORD: 1,
 
-    SESSION_TIMED_OUT: 0,
+    SESSION_TIMED_OUT: 2,
 
-    BAD_REQUEST: 0,
+    BAD_REQUEST: 3,
 
-    MATCH_ENDED: 0,
+    MATCH_ENDED: 4,
 
 }
 

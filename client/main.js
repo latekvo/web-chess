@@ -1,5 +1,11 @@
 // TODO: CREDIT https://www.onlinelabels.com/clip-art/Chess_symbols_set-100629 Igor Krizanovskij for chess clip art
 
+let clickType = {
+    START: 0,
+    END: 1,
+    CANCEL: 2
+}
+
 let localPlayingField = []
 let localMoveList = []
 let localPieceColor = pe.WHITE
@@ -9,8 +15,11 @@ let localOpponentUsername = undefined
 let localUserId = undefined
 let localUsername = undefined
 
-let initPos_x, initPos_y
+let initTarget, endTarget
 let isClicked = false
+
+let checkMySecurityHashRequest = new XMLHttpRequest();
+
 
 // right after loading, before doing anything, check if the user is logged in
 // for now, the only cookie can be the userId, so we can use this simplified function
@@ -23,12 +32,20 @@ let getMyUsernameRequest = new XMLHttpRequest();
 
 getMyUsernameRequest.onreadystatechange = function () {
     console.log("received user's username")
-    if (getMyUsernameRequest.status === 200)
-        localUsername = JSON.parse(getMyUsernameRequest.responseText)["username"]
+    if (this.readyState === 4) {
+        if (this.status === 200) {
+            localUsername = JSON.parse(getMyUsernameRequest.responseText)['username']
+            console.log(JSON.parse(getMyUsernameRequest.responseText)['username'])
+
+            drawLoginInfo()
+        }
+    }
 }
 
 if (localUserId !== undefined) {
+    console.log('sent user request')
     getMyUsernameRequest.open("GET", '/sayMyName/' + localUserId)
+    getMyUsernameRequest.send()
 }
 
 function getPositionById(id) {
@@ -70,8 +87,6 @@ wrapper.addEventListener('click', (event) => {
 })
  */
 function moveEnd(e) {
-    // based on field size, get both the selected chess fields and move the piece from one to anotherwe need to find both
-
 
 }
 
@@ -173,17 +188,14 @@ function drawBoard() {
 
             let rawFilename = filename
             filename = 'resources/' + filename + '.png'
-            console.log('loaded file: ' + filename)
 
             let html_piece_new_img = '<img draggable="false" (dragstart)="false;" class="piece-img" src="'
             let html_piece_end_img = '">'
 
             if (rawFilename !== undefined) {
-                console.log('loading texture to: ' + hor_visual + ver_visual)
                 document.getElementById(hor_visual + ver_visual).innerHTML += (html_piece_new_img + filename + html_piece_end_img)
 
             }
-            console.log(id);
         }
     }
 
@@ -191,24 +203,8 @@ function drawBoard() {
 
     // At last, add a click event listener to each field
     fields.forEach(field => {
-        field.addEventListener('click', event => {
-            // The field that was clicked is the event target
-            const clickedField = event.target;
-
-            // You can get the chess position of the clicked field by using the `dataset` property
-            let position_x = parseInt(clickedField.dataset.x),
-                position_y = parseInt(clickedField.dataset.y)
-
-            if (!isClicked) {
-                isClicked = true
-                initPos_x = position_x
-                initPos_y = position_y
-            } else {
-                isClicked = false
-            }
-
-        });
-    });
+        field.addEventListener('click', boardClickListener)
+    })
 
 }
 
@@ -227,37 +223,56 @@ function getTemporaryId() {
 */
 
 function getOpenMatches() {
+    console.log('getting new matches')
+
     // Send a GET request to the server
     fetch('/games')
         .then(response => response.json())
         .then(matches => {
 
+            console.log(matches)
+
             let matchList = document.getElementById('match-list')
+            matchList.innerHTML = ""
 
             // matches is an array, [{boardId, playerId, playerRating}, ..., ...]
-            matches.forEach(match => {
+            matches.forEach((match) => {
+
+                // omit our own matches
+                if (match.boardId === localBoardId) {
+                    return
+                }
+
+                console.log(match)
+
                 // get all the params and fill the open games with them
+                const listItem = document.createElement('li')
+                listItem.classList.add('match')
 
-                const listItem = document.createElement('li');
-                listItem.classList.add('match');
+                const boardId = document.createElement('div')
+                boardId.classList.add('match-board-id')
+                boardId.textContent = 'Board ID: ' + match.boardId
 
-                const boardId = document.createElement('div');
-                boardId.classList.add('match-board-id');
-                boardId.textContent = `Board ID: ${match.boardId}`;
+                const playerId = document.createElement('div')
+                playerId.classList.add('match-player-id')
+                playerId.textContent = 'Player ID: ' + match.username
 
-                const playerId = document.createElement('div');
-                playerId.classList.add('match-player-id');
-                playerId.textContent = `Player ID: ${match.username}`;
+                const playerRating = document.createElement('div')
+                playerRating.classList.add('match-player-rating')
+                playerRating.textContent = 'Player Rating: ' + match.rank
 
-                const playerRating = document.createElement('div');
-                playerRating.classList.add('match-player-rating');
-                playerRating.textContent = `Player Rating: ${match.rank}`;
+                const joinButton = document.createElement('button')
+                joinButton.classList.add('menu-button')
+                joinButton.textContent = 'JOIN'
 
-                listItem.appendChild(boardId);
-                listItem.appendChild(playerId);
-                listItem.appendChild(playerRating);
+                joinButton.addEventListener('click', joinGame)
 
-                matchList.appendChild(listItem);
+                listItem.appendChild(joinButton)
+                listItem.appendChild(boardId)
+                listItem.appendChild(playerId)
+                listItem.appendChild(playerRating)
+
+                matchList.appendChild(listItem)
             })
         })
 }
@@ -265,47 +280,96 @@ function getOpenMatches() {
 // Check for matches every 4 seconds
 setInterval(getOpenMatches, 4000)
 
+let assertReadyRequest = new XMLHttpRequest();
+
+assertReadyRequest.onreadystatechange = function () {
+    if (this.status === 200 && this.readyState === 4) {
+        let rawData = JSON.parse(assertReadyRequest.responseText);
+
+        localBoardId = rawData["boardId"]
+    }
+};
+
+
+function assertReady() {
+    let data = {
+        userId: localUserId
+    }
+
+    console.log(data)
+
+    createGameRequest.open("POST", "/declareReady", true)
+    createGameRequest.setRequestHeader("Content-Type","application/json")
+    createGameRequest.send(JSON.stringify(data))
+}
+
 let joinGameRequest = new XMLHttpRequest();
 
 joinGameRequest.onreadystatechange = function () {
-    if (createGameRequest.status === 200) {
+    if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(createGameRequest.responseText);
 
+        localBoardId = rawData["boardId"]
+
+        assertReady()
     }
 };
 
 // POST /joinGame {userId, boardId}
 function joinGame() {
-    let body = new FormData()
-    body.set('userId', localUserId)
-    body.set('boardId', localBoardId)
+    let data = {
+        userId: localUserId,
+        boardId: localBoardId
+    }
+
+    console.log(data)
 
     createGameRequest.open("POST", "/joinGame", true)
-    createGameRequest.send(body)
+    createGameRequest.setRequestHeader("Content-Type","application/json")
+    createGameRequest.send(JSON.stringify(data))
 }
 
 let createGameRequest = new XMLHttpRequest();
 
 createGameRequest.onreadystatechange = function () {
-    if (createGameRequest.status === 200) {
+    if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(createGameRequest.responseText);
 
         localBoardId = rawData["boardId"]
 
-        joinGame()
+        assertReady()
     }
 };
 
 // POST /createGame {userId}
 function createGame() {
-    let body = new FormData()
-    body.set('userId', localUserId)
+    let data = {
+        userId: localUserId
+    }
 
     createGameRequest.open("POST", "/createGame", true)
-    createGameRequest.send(body)
+    createGameRequest.setRequestHeader("Content-Type","application/json")
+    createGameRequest.send(JSON.stringify(data))
 }
 
 document.getElementById('new-game-btn').addEventListener('click', createGame)
+
+function logout() {
+    // clear cookies, reload page, sadly just setting cookies to "" doesn't work
+    let cookies = document.cookie.split(';')
+    let expiryString = "=;expires=" + new Date(0).toUTCString()
+
+    localUserId = undefined
+
+    // this suddenly stopped working
+    cookies.forEach((cookie) => {
+        document.cookie = cookie + expiryString
+    })
+
+    console.log(document.cookie)
+
+    drawLoginInfo()
+}
 
 function drawLoginInfo() {
     let loginInfoNotLoggedInPage =
@@ -332,17 +396,7 @@ function drawLoginInfo() {
         // todo: fill in the blanks
         document.getElementById('user-data').innerHTML = loginInfoLoggedInPage
 
-        document.getElementById('go-logout').addEventListener('click', () => {
-            // clear cookies, reload page, sadly just setting cookies to "" doesn't work
-            let cookies = document.cookie.split(';')
-            let expiryString = "=;expires=" + new Date(0).toUTCString()
-
-            cookies.forEach((cookie) => {
-                document.cookie = cookie + expiryString
-            })
-
-            history.go(0) // go to current page
-        })
+        document.getElementById('go-logout').addEventListener('click', logout)
     }
 
 }

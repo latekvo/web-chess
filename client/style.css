@@ -54,6 +54,8 @@ body {
     margin: 0 1vw 1vw 1vw;
     flex-direction: column;
 
+    overflow: scroll;
+
     background-color: var(--darktone); /* todo: remove */
 }
 

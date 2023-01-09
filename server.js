@@ -36,17 +36,21 @@ let app = express();
 
 // standard mutex lock
 // basic syntax: lock.[read|write]Lock('lock's key', function (freeLock) { /// freeLock(); } )
-//let ReadWriteLock = require('rwlock');
-//let lock = new ReadWriteLock();
+let ReadWriteLock = require('rwlock');
+let lock = new ReadWriteLock();
 
-app.use(express.static(__dirname + '/client/'));
-app.use(bodyParser.urlencoded({extended : true}));
-app.use(cookieParser());
+let favicon = require('serve-favicon');
+
+app.use(express.static(__dirname + '/client/'))
+app.use(bodyParser.urlencoded({extended : true}))
+app.use(bodyParser.json())
+app.use(cookieParser())
+app.use(favicon(__dirname + '/client/resources/favicon.ico'));
 
 const usernameToEmail = new Map(); // user's username may change
 const board_db = new Map(); // stores current board state bound to match's id
 const open_matches_db = new Set(); // set of awaiting matches
-const user_db = new Map(); // stores stats bound to email, so that a user can be quickly looked up
+let user_db = new Map(); // stores stats bound to email, so that a user can be quickly looked up
 const active_users = new Map() // stores session-keys and accounts associated with them
 
 let boardState = {
@@ -73,13 +77,13 @@ let boardState = {
 const errorCode = {
 
     INVALID_LOGIN: 0,
-    INVALID_PASSWORD: 0,
+    INVALID_PASSWORD: 1,
 
-    SESSION_TIMED_OUT: 0,
+    SESSION_TIMED_OUT: 2,
 
-    BAD_REQUEST: 0,
+    BAD_REQUEST: 3,
 
-    MATCH_ENDED: 0,
+    MATCH_ENDED: 4,
 
 }
 
@@ -129,8 +133,8 @@ const blankBoardPrefab = {
     // board ID is the key, it's not stored here
 
     // foreign keys of both players
-    whiteId: undefined,
-    blackId: undefined,
+    whiteEmail: undefined,
+    blackEmail: undefined,
 
     toMove: pe.WHITE,
     moveList: [], // [ { time: x, from: [], to: [] }, { time: x, from: [], to: [] } ]
@@ -443,8 +447,8 @@ function makeBoard(whiteUser, blackUser) {
     let newBoard = blankBoardPrefab
 
     newBoard.boardId = boardId
-    newBoard.whiteId = whiteUser
-    newBoard.blackId = blackUser
+    newBoard.whiteEmail = whiteUser
+    newBoard.blackEmail = blackUser
     newBoard.gameState = boardState.NOT_STARTED
 
     // NOTE: removed mutex functionality, it may have been necessary, will find out eventually
@@ -500,42 +504,106 @@ function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     return state
 }
 
-app.post('/createGame', (req, res) => {
-    let creatorId = req.body["userId"]
+app.post('/declareReady', (req, res) => {
+    let reqBody = req.body
+    let requesterId = reqBody["userId"]
+    let requester = user_db.get(active_users.get(requesterId))
+    let board = board_db.get(requester.currentBoardId)
 
-    if (active_users.has(creatorId) === false) {
+    let playerWhite = user_db.get(active_users.get(board.whiteId))
+    let playerBlack = user_db.get(active_users.get(board.whiteId))
+
+    // check if the other player is ready, if so, send back both replies
+    // if not, set this response as the player's awaited response
+
+    if ((playerWhite !== undefined && playerWhite.awaitedRequest !== undefined) ||
+        (playerBlack !== undefined && playerBlack.awaitedRequest !== undefined)) {
+
+        let requesterColor = undefined
+
+        if (playerWhite.awaitedRequest !== undefined) {
+            playerWhite.awaitedRequest.writeHead(200)
+            playerWhite.awaitedRequest.write(JSON.stringify({color: pe.WHITE}))
+            playerWhite.awaitedRequest.send()
+
+            playerWhite.awaitedRequest = undefined
+
+            requesterColor = pe.BLACK
+        } else {
+            playerBlack.awaitedRequest.writeHead(200)
+            playerBlack.awaitedRequest.write(JSON.stringify({color: pe.BLACK}))
+            playerBlack.awaitedRequest.send()
+
+            playerBlack.awaitedRequest = undefined
+
+            requesterColor = pe.WHITE
+        }
+
+        requester.awaitedRequest.writeHead(200)
+        requester.awaitedRequest.write(JSON.stringify({color: requesterColor}))
+        requester.awaitedRequest.send()
+
+        requester.awaitedRequest = undefined
+    } else {
+        requester.awaitedRequest = res
+    }
+
+})
+
+app.post('/createGame', (req, res) => {
+    let reqBody = req.body
+
+    let creatorId = reqBody["userId"]
+
+    console.log('creator ID: ' + creatorId)
+
+    let creatorMail = active_users.get(creatorId)
+    let user = user_db.get(creatorMail)
+
+    if (user === undefined) {
         res.writeHead(400)
         res.send()
+
+        console.log('unknown user tried joining')
         return
     }
 
-    let whiteUser = undefined, blackUser = undefined;
-    let requesterColor
+    let whiteMail = undefined, blackMail = undefined;
+
 
     if (Math.random() < 0.5) {
-        whiteUser = creatorId
-        requesterColor = pe.WHITE
+        whiteMail = creatorMail
     } else {
-        blackUser = creatorId
-        requesterColor = pe.BLACK
+        blackMail = creatorMail
     }
 
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
-    let boardId = makeBoard(whiteUser, blackUser);
+    let boardId = makeBoard(whiteMail, blackMail);
+    console.log('created a new board: ')
+    console.log(board_db.get(boardId))
+
+    user.currentBoardId = boardId
+
+    console.log('opened new ad for: ' + boardId)
+    open_matches_db.add(boardId)
+    console.log(open_matches_db)
 
     res.writeHead(200)
-    res.write(JSON.stringify({color: requesterColor, boardId: boardId}))
+    res.write(JSON.stringify({boardId: boardId}))
     res.send()
 });
 
 // creator of the game has to call /joinGame as well, it will make him wait for an opponent to show up
 app.post('/joinGame', (req, res) => {
     let userId = req.body["userId"]
-    let user = user_db.get(userId)
+    let user = user_db.get(active_users.get(userId))
 
     let boardId = req.body["boardId"]
     let board = board_db.get(boardId)
+
+    console.log('player joining: ' + boardId)
+    console.log(req.body)
 
     let requesterColor = undefined
 
@@ -554,47 +622,38 @@ app.post('/joinGame', (req, res) => {
         return
     }
 
-    user.currentBoardId = boardId
-
-    // user === creator
-    if (userId === board.whiteId || userId === board.blackId) {
-        // if the user is also the creator, cache his request and send it back as soon as an opponent joins
-        user.awaitedRequest = res
-
-        // only now do we actually advertise, to avoid opponent somehow joining the game before the creator
-        open_matches_db.add(boardId)
-
-    } else { // user === random joining player
-
-        // this check will be triggered only if both of the players collaborate to deliberately crash/bug the server
-        // todo: implement ban system
-        if (!open_matches_db.has(boardId)) {
-            res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
-            res.writeHead(400)
-            res.send()
-        }
-
-        let creatorId
-
-        // fill in the remaining spot in the
-        if (board.whiteId === undefined) {
-            board.whiteId = userId
-            requesterColor = pe.WHITE
-            creatorId = board.blackId
-        } else {
-            board.blackId = userId
-            requesterColor = pe.BLACK
-            creatorId = board.whiteId
-        }
-
-        // send back an OK to the board creator to make/get move
-        creatorId.awaitedRequest.write()
-        creatorId.awaitedRequest.writeHead(200)
-        creatorId.awaitedRequest.send()
+    // this check will be triggered only if both of the players collaborate to deliberately crash/bug the server
+    // todo: implement ban system
+    if (!open_matches_db.has(boardId)) {
+        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
+        res.writeHead(400)
+        res.send()
     }
 
-    res.write(JSON.stringify({color: requesterColor}))
+    let creatorId
+
+    // fill in the remaining spot in the
+    if (board.whiteId === undefined) {
+        board.whiteId = userId
+        requesterColor = pe.WHITE
+        creatorId = board.blackId
+    } else {
+        board.blackId = userId
+        requesterColor = pe.BLACK
+        creatorId = board.whiteId
+    }
+
+    open_matches_db.delete(boardId)
+    user.currentBoardId = boardId
+
+    // send back an OK to the board creator to make/get move
+    creatorId.awaitedRequest.writeHead(200)
+    creatorId.awaitedRequest.write(JSON.stringify({boardId: boardId}))
+    creatorId.awaitedRequest.send()
+
+
     res.writeHead(200)
+    res.write(JSON.stringify({color: requesterColor}))
     res.send()
 });
 
@@ -618,8 +677,8 @@ app.post('/makeMove', async (req, res) => {
 
     // user timed out
     if (userData === undefined) {
-        res.write({error: errorCode.SESSION_TIMED_OUT})
         res.writeHead(400)
+        res.write({error: errorCode.SESSION_TIMED_OUT})
         res.send()
         return
     }
@@ -655,8 +714,8 @@ app.post('/makeMove', async (req, res) => {
 
     } else {
         // move could not be made
-        res.write({error: errorCode.BAD_REQUEST})
         res.writeHead(400)
+        res.write({error: errorCode.BAD_REQUEST})
     }
 
     // 200 or 400
@@ -693,6 +752,7 @@ app.post('/login', (req, res) => {
             let newUserId = crypto.randomBytes(32).toString('hex')
 
             // login the account
+            console.log('new userId created')
             active_users.set(newUserId, email)
 
             res.cookie('userId', newUserId)
@@ -706,36 +766,59 @@ app.post('/login', (req, res) => {
             res.write(fs.readFileSync('client/login.html', 'utf8'))
             res.send()
         }
-    });
-});
+    })
+})
 
-app.post('/register', (req, res) => {
+function backupUserDatabase() {
+    lock.writeLock('user_db', function (freeLock) {
+
+        console.log(user_db)
+
+        // Map -> Array -> String
+        fs.writeFileSync('users_db.json', JSON.stringify(Array.from(user_db.entries())))
+
+        freeLock()
+    })
+}
+app.post('/register', async (req, res) => {
     let {email, username, password /*, passwordRepeat*/} = req.body
 
-    // todo: ONLY FOR TESTING, REMOVE THIS LINE ASAP
-    console.log({email, username, password})
+    // make sure neither the same email nor username exists yet
+    if (usernameToEmail.has(username) || user_db.has(email)) {
+        res.writeHead(400)
+        res.write(fs.readFileSync('client/register.html', 'utf8'))
+        res.send()
+        return
+    }
 
     // password repeat should be checked locally, and the 'register' button should just get greyed out
 
     let newUser = blankPlayerPrefab
     newUser.username = username
+    newUser.email = email
 
     // gen salt, hash the password
-    bcrypt.genSalt(10, function(err, salt) {
-        bcrypt.hash(password, salt, function(err, hash) {
+    // this function is somehow async, without me being able to use await
+    // thus, it finishes work after the changes have been already applied
+    // thus everything now has to be inside this function for anything to work
+    bcrypt.genSalt(10, function (err, salt) {
+        bcrypt.hash(password, salt, function (err, hash) {
             newUser.passwordSalt = salt
             newUser.passwordHash = hash
-        });
-    });
 
-    // add the account
-    user_db.set(email, newUser)
-    usernameToEmail.set(username, email)
+            // add the account
+            user_db.set(email, newUser)
+            usernameToEmail.set(username, email)
 
-    // and respond with the landing page
-    res.write(fs.readFileSync('client/index.html', 'utf8'))
-    res.send()
-});
+            // and respond with the landing page
+            res.writeHead(200)
+            res.write(fs.readFileSync('client/index.html', 'utf8'))
+            res.send()
+
+            backupUserDatabase()
+        })
+    })
+})
 
 // too little info for this to be used for now
 app.get('/player/:name', function (req, res) {
@@ -752,25 +835,59 @@ app.get('/player/:name', function (req, res) {
 
     let player = user_db.get(player_email)
 
-    res.writeHead(200);
-    res.write({username: player.username, rank: player.rank});
-    res.send();
-});
+    res.writeHead(200)
+    res.write(JSON.stringify({username: player.username, rank: player.rank}))
+    res.send()
+})
 
 // a request for some open games on the list
 app.get('/games', function (req, res) {
     let maxResponseLength = 16 // temporary hardcoded limit to how many games can be advertised at a time
 
-    let games = []
+    let recentGames = Array.from(open_matches_db).slice(-maxResponseLength) // FIFO X matches from the open...db
 
-    for (let i = 0; i < maxResponseLength; i++) {
-        // add boardId, username, rank
-    }
+    let outputtedGames = []
 
-    res.writeHead(200);
-    res.write(JSON.stringify(games));
-    res.send();
-});
+    console.log('open games: ')
+    console.log(open_matches_db)
+    console.log(recentGames)
+
+    recentGames.forEach((boardId) => {
+        let board = board_db.get(boardId)
+
+        if (board === undefined) {
+            console.log('board not found, ID: ' + boardId)
+            return
+        }
+
+        let boardUserEmail
+
+        if (board.whiteEmail !== undefined)
+            boardUserEmail = board.whiteEmail
+        else
+            boardUserEmail = board.blackEmail
+
+        let boardUser = user_db.get(boardUserEmail)
+
+        if (boardUser === undefined) {
+            console.log('user not found, mail: ' + boardUserEmail)
+            return
+        }
+
+        // {boardId: board.boardId, username: player.username, rank: player.rank}
+        outputtedGames.push({
+            boardId: boardId,
+            username: boardUser.username,
+            rank: boardUser.rank
+        })
+    })
+
+    console.log(outputtedGames)
+
+    res.writeHead(200)
+    res.write(JSON.stringify(outputtedGames))
+    res.send()
+})
 
 // how do I send multiple files? when another file is linked to index.html, the request for it is auto sent to the server
 // I need to respond to /style.css get request with style.css file. this is done automatically if I use .static() function
@@ -788,15 +905,9 @@ app.get('/favicon.ico', function (req, res) {
 })
 
 app.get('/sayMyName/:id', function (req, res) {
-    let userMail = active_users.get(req.params.id)
+    let userId = active_users.get(req.params.id)
 
-    if (userMail === undefined) {
-        res.writeHead(400)
-        res.send()
-        return
-    }
-
-    let user = user_db.get(userMail)
+    let user = user_db.get(userId)
 
     if (user === undefined) {
         res.writeHead(400)
@@ -804,18 +915,35 @@ app.get('/sayMyName/:id', function (req, res) {
         return
     }
 
-    let username = user.username
+    console.log('say my name: ' + user.username)
+    console.log(active_users)
+    res.writeHead(200)
+    res.write(JSON.stringify({username: user.username}))
+    res.send()
+})
 
-    res.writeHead(400)
+app.post('/isHashValid/:id', function (req, res) {
+    let reqId = req.params.id
+
+    if (active_users.has(reqId)) {
+
+    }
+    res.writeHead(200)
     res.write(JSON.stringify({username: username}))
     res.send()
 })
 
 // load main db
-// TODO: >>> implement auto-saving every move, ideally running on a separate thread (saving to a file)
+user_db = new Map(JSON.parse(fs.readFileSync('users_db.json').toString()))
+console.log(user_db)
+
+// also populate the translation map
+user_db.forEach((entry) => {
+    usernameToEmail.set(entry.username, entry.email)
+})
 
 let port = 3000
 
 app.listen(port)
 
-console.log("server started on port: " + port);
+console.log("server started on port: " + port)
