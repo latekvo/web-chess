@@ -15,11 +15,15 @@ let localOpponentUsername = undefined
 let localUserId = undefined
 let localUsername = undefined
 
-let initTarget, endTarget
+let isMoveReady = false, // pre-move mechanic, waits with the request until getMove request returns
+    isSendReady = false  // if it's not a pre-move, can we send it or is it not our turn
+
+let initTarget = undefined,
+    endTarget = undefined
+
 let isClicked = false
 
 let checkMySecurityHashRequest = new XMLHttpRequest();
-
 
 // right after loading, before doing anything, check if the user is logged in
 // for now, the only cookie can be the userId, so we can use this simplified function
@@ -30,15 +34,14 @@ if (cookie.length > 2) {
 
 let getMyUsernameRequest = new XMLHttpRequest();
 
+// fixme: this function gets multiple responses, but shouldn't
 getMyUsernameRequest.onreadystatechange = function () {
     console.log("received user's username")
-    if (this.readyState === 4) {
-        if (this.status === 200) {
-            localUsername = JSON.parse(getMyUsernameRequest.responseText)['username']
-            console.log(JSON.parse(getMyUsernameRequest.responseText)['username'])
+    if (this.readyState === 4 && this.status === 200) {
+        localUsername = JSON.parse(getMyUsernameRequest.responseText)['username']
+        console.log(JSON.parse(getMyUsernameRequest.responseText)['username'])
 
-            drawLoginInfo()
-        }
+        drawLoginInfo()
     }
 }
 
@@ -48,50 +51,104 @@ if (localUserId !== undefined) {
     getMyUsernameRequest.send()
 }
 
-function getPositionById(id) {
-    let domObject = document.getElementById(id);
+let makeMoveRequest = new XMLHttpRequest();
 
-    let x = 0, y = 0
-    while (domObject !== null){
-        x += domObject.offsetLeft;
-        y += domObject.offsetTop;
-
-        domObject = domObject.offsetParent;
+makeMoveRequest.onreadystatechange = function () {
+    if (this.readyState === 4 && this.status === 200) {
+        // we already know everything's fine, and getMove has already been sent
+        console.log('move successfully submitted')
     }
-
-    return [x, y];
 }
-
 // get clicked field, and highlight it
 function moveStart(e) {
-    initPos_x = e.clientX
-    initPos_y = e.clientY
+    initTarget = e.target
 
-    isClicked = true
+    let f_x = parseInt(initTarget.dataset.x),
+        f_y = parseInt(initTarget.dataset.y)
+
+    if (getColor(localPlayingField[f_y][f_x]) === localPieceColor) {
+        console.log('piece picked up, ready to place')
+        isClicked = true
+
+        castRay()
+    }
 }
 
-// get other field, and move the piece there
-// this is absolutely ((not smart)), we can just check the id of the clicked element
-/* sample code:
-// wrapper is a div containing all the desired buttons or chessfields
-const wrapper = document.getElementById('wrapper');
-
-wrapper.addEventListener('click', (event) => {
-  // don't check for this in the chessField checks of course
-  const isButton = event.target.nodeName === 'BUTTON';
-  if (!isButton) {
-    return;
-  }
-
-  console.dir(event.target.id);
-})
- */
 function moveEnd(e) {
+    endTarget = e.target
 
+    if (endTarget === null || endTarget === undefined)
+        return
+
+    // CLICK ON SELF - cancel the click
+    if (initTarget === endTarget) {
+        initTarget = undefined
+        endTarget = undefined
+        isClicked = false
+
+        return
+    }
+
+    let f_x = parseInt(initTarget.dataset.x),
+        f_y = parseInt(initTarget.dataset.y)
+
+    let t_x = parseInt(endTarget.dataset.x),
+        t_y = parseInt(endTarget.dataset.y)
+
+    // CLICK ON OWN COLOR - switch the starting point
+    if (getColor(localPlayingField[t_y][t_x]) === localPieceColor) {
+        initTarget = endTarget
+        endTarget = undefined
+
+        isClicked = true
+
+        return
+    }
+
+    // UNRESOLVED = fine, apply the changes
+    if (checkMove(f_x, f_y, t_x, t_y) === boardState.UNRESOLVED) {
+        localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
+        localPlayingField[f_y][f_x] = pe.BLANK
+
+        drawBoard()
+
+        // TODO: SEND MOVE TO SERVER
+        // POST /makeMove {userId, moveFrom, moveTo} (moveFrom/moveTo = {x, y})
+        let data = {
+            userId: localUserId,
+            moveFrom: {x: f_x, y: f_y},
+            moveTo: {x: t_x, y: t_y}
+        }
+
+        console.log('sending MAKE MOVE')
+        console.log(data)
+
+        createGameRequest.open("POST", "/makeMove", true)
+        createGameRequest.setRequestHeader("Content-Type","application/json")
+        createGameRequest.send(JSON.stringify(data))
+
+        // this request is sent now but will be returned only after the opponent makes a move
+        data = {
+            userId: localUserId
+        }
+
+        console.log('sending GET MOVE')
+        console.log(data)
+
+        createGameRequest.open("POST", "/getMove", true)
+        createGameRequest.setRequestHeader("Content-Type","application/json")
+        createGameRequest.send(JSON.stringify(data))
+    }
+
+
+    isClicked = false
 }
 
 // only checks for bounds, then passes all data along accordingly to the current state of 'isClicked'
 function boardClickListener(e) {
+    console.log('clicked on board')
+    console.log(e.target)
+
     if (isClicked)
         moveEnd(e)
     else
@@ -183,8 +240,17 @@ function drawBoard() {
 
             let newlyAddedCell = document.getElementById(id)
 
-            newlyAddedCell.dataset.x = String(h_it)
-            newlyAddedCell.dataset.y = String(v_it)
+            // directly associated with localPlayingField
+            if (localPieceColor === pe.WHITE) {
+                newlyAddedCell.dataset.x = String(h_it)
+                newlyAddedCell.dataset.y = String(7 - v_it)
+            }
+
+            // directly associated with localPlayingField
+            if (localPieceColor === pe.BLACK) {
+                newlyAddedCell.dataset.x = String(7 - h_it)
+                newlyAddedCell.dataset.y = String(v_it)
+            }
 
             let rawFilename = filename
             filename = 'resources/' + filename + '.png'
@@ -199,11 +265,11 @@ function drawBoard() {
         }
     }
 
-    const fields = document.querySelectorAll('.chessboard');
+    const fields = document.querySelectorAll('.chess-box');
 
     // At last, add a click event listener to each field
     fields.forEach(field => {
-        field.addEventListener('click', boardClickListener)
+        field.addEventListener('mousedown', boardClickListener)
     })
 
 }
@@ -222,8 +288,31 @@ function getTemporaryId() {
 }
 */
 
+let getMoveRequest = new XMLHttpRequest();
+
+getMoveRequest.onreadystatechange = function () {
+    if (this.status === 200 && this.readyState === 4) {
+        let rawData = JSON.parse(assertReadyRequest.responseText)
+
+        if (isMoveReady) {
+            // if there's a pre-move, apply it immediately
+
+
+        } else {
+            //
+
+        }
+    }
+}
+
 function getOpenMatches() {
     console.log('getting new matches')
+
+    if (localBoardId !== undefined) {
+        document.getElementById('match-list').innerHTML = ""
+        return
+    }
+
 
     // Send a GET request to the server
     fetch('/games')
@@ -265,6 +354,8 @@ function getOpenMatches() {
                 joinButton.classList.add('menu-button')
                 joinButton.textContent = 'JOIN'
 
+                joinButton.dataset.boardId = match.boardId
+
                 joinButton.addEventListener('click', joinGame)
 
                 listItem.appendChild(joinButton)
@@ -286,10 +377,21 @@ assertReadyRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(assertReadyRequest.responseText);
 
-        localBoardId = rawData["boardId"]
+        localPieceColor = rawData["color"]
+
+        drawBoard()
+
+        // to move
+        if (localPieceColor === pe.WHITE) {
+
+        }
+
+        // to listen
+        if (localPieceColor === pe.BLACK) {
+
+        }
     }
 };
-
 
 function assertReady() {
     let data = {
@@ -316,10 +418,14 @@ joinGameRequest.onreadystatechange = function () {
 };
 
 // POST /joinGame {userId, boardId}
-function joinGame() {
+function joinGame(e) {
+
+    if (e.target === null || e.target === undefined)
+        return
+
     let data = {
         userId: localUserId,
-        boardId: localBoardId
+        boardId: e.target.dataset.boardId
     }
 
     console.log(data)

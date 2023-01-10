@@ -221,11 +221,11 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     // find piece's iterator in the mov_vel_list or mov_pos_list
     let pieceIt = -1
     let isPosBased = false
-    for (let i = 0; mov_vel_list.length; i++) {
+    for (let i = 0; i < mov_vel_list.length; i++) {
         if (mov_vel_list[i].pieces === pieceId)
             pieceIt = i
     }
-    for (let i = 0; mov_pos_list.length; i++) {
+    for (let i = 0; i < mov_pos_list.length; i++) {
         if (mov_pos_list[i].pieces === pieceId) {
             pieceIt = i
             isPosBased = true
