@@ -51,7 +51,7 @@ const usernameToEmail = new Map(); // user's username may change
 const board_db = new Map(); // stores current board state bound to match's id
 const open_matches_db = new Set(); // set of awaiting matches
 let user_db = new Map(); // stores stats bound to email, so that a user can be quickly looked up
-const active_users = new Map() // stores session-keys and accounts associated with them
+const active_users = new Map() // stores session data about users
 
 let boardState = {
     NOT_STARTED: -2,
@@ -132,9 +132,15 @@ let pe = pieceEnum
 const blankBoardPrefab = {
     // board ID is the key, it's not stored here
 
+    boardId: undefined, // master key double-stored for the sake of convienience
+
     // foreign keys of both players
     whiteEmail: undefined,
     blackEmail: undefined,
+
+    // these will be invalid as soon as the match ends
+    whiteId: undefined,
+    blackId: undefined,
 
     toMove: pe.WHITE,
     moveList: [], // [ { time: x, from: [], to: [] }, { time: x, from: [], to: [] } ]
@@ -143,14 +149,14 @@ const blankBoardPrefab = {
     gameState: undefined, // boardState enum defining current state, with UNRESOLVED being still active
 
     board: [
-        [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
+        [pe.W_R, pe.W_N, pe.W_B, pe.W_Q, pe.W_K, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
         [pe.W_P],
         [pe.BLANK],
         [pe.BLANK],
         [pe.BLANK],
         [pe.BLANK],
         [pe.B_P],
-        [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R] // 8 (7)
+        [pe.B_R, pe.B_N, pe.B_B, pe.B_Q, pe.B_K, pe.B_B, pe.B_N, pe.B_R] // 8 (7)
     ]
 }
 
@@ -482,10 +488,17 @@ function makeBoard(whiteUser, blackUser) {
     let newBoard = blankBoardPrefab
 
     newBoard.boardId = boardId
-    newBoard.whiteEmail = whiteUser
-    newBoard.blackEmail = blackUser
+    newBoard.whiteId = whiteUser
+    newBoard.blackId = blackUser
+    newBoard.whiteEmail = active_users.get(whiteUser) // doesn't matter if these are undefined
+    newBoard.blackEmail = active_users.get(blackUser)
     newBoard.gameState = boardState.NOT_STARTED
 
+    if (newBoard.whiteEmail !== undefined)
+        newBoard.whiteEmail = newBoard.whiteEmail.email
+
+    if (newBoard.blackEmail !== undefined)
+        newBoard.blackEmail = newBoard.blackEmail.email
     // NOTE: removed mutex functionality, it may have been necessary, will find out eventually
 
     board_db.set(boardId, newBoard)
@@ -544,14 +557,12 @@ app.post('/declareReady', (req, res) => {
 
     let reqBody = req.body
     let requesterId = reqBody["userId"]
-    let requester = user_db.get(active_users.get(requesterId))
-    let board = board_db.get(requester.currentBoardId)
+    let requesterSessionData = active_users.get(requesterId)
+    let requester = user_db.get(requesterSessionData.email)
+    let board = board_db.get(requesterSessionData.currentBoardId)
 
-    let playerWhite = user_db.get(board.whiteEmail)
-    let playerBlack = user_db.get(board.blackEmail)
-
-    //console.log(playerWhite)
-    //console.log(playerBlack)
+    let playerWhite = active_users.get(board.whiteId)
+    let playerBlack = active_users.get(board.blackId)
 
     // check if the other player is ready, if so, send back both replies
     // if not, set this response as the player's awaited response
@@ -606,7 +617,7 @@ app.post('/createGame', (req, res) => {
 
     console.log('creator ID: ' + creatorId)
 
-    let creatorMail = active_users.get(creatorId)
+    let creatorMail = active_users.get(creatorId).email
     let user = user_db.get(creatorMail)
 
     if (user === undefined) {
@@ -617,18 +628,9 @@ app.post('/createGame', (req, res) => {
         return
     }
 
-    let whiteMail = undefined, blackMail = undefined;
-
-
-    if (Math.random() < 0.5) {
-        whiteMail = creatorMail
-    } else {
-        blackMail = creatorMail
-    }
-
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
-    let boardId = makeBoard(whiteMail, blackMail);
+    let boardId = makeBoard(whiteId, blackId);
     console.log('created a new board: ')
     console.log(board_db.get(boardId))
 
@@ -646,7 +648,7 @@ app.post('/createGame', (req, res) => {
 // creator of the game has to call /joinGame as well, it will make him wait for an opponent to show up
 app.post('/joinGame', (req, res) => {
     let userId = req.body["userId"]
-    let user = user_db.get(active_users.get(userId))
+    let user = user_db.get(active_users.get(userId).email)
 
     let boardId = req.body["boardId"]
     let board = board_db.get(boardId)
@@ -691,7 +693,7 @@ app.post('/getMove', (req, res) => {
 
     if (active_users.has(requesterId)) {
         // unintuitive, .get() actually returns a reference, not a value
-        active_users.get(requesterId).awaitedRequest = res;
+        active_users.get(requesterId).awaitedRequest = res
     } else {
         res.writeHead(400) // timed out
         res.send()
@@ -701,7 +703,7 @@ app.post('/getMove', (req, res) => {
 app.post('/makeMove', async (req, res) => {
     let rawData = req.body
     let userId = rawData['userId']
-    let userData = active_users.get(userId)
+    let userData = user_db.get(active_users.get(userId).email)
 
     // user timed out
     if (userData === undefined) {
@@ -778,10 +780,15 @@ app.post('/login', (req, res) => {
 
             // note: if this isn't clear yet, userId IS A random, PRIVATE SESSION TOKEN
             let newUserId = crypto.randomBytes(32).toString('hex')
+            
+            let newSessionData = blankActiveUserPrefab
+
+            newSessionData.email = email
+            newSessionData.dateOfCreation = new Date()
 
             // login the account
             console.log('new userId created')
-            active_users.set(newUserId, email)
+            active_users.set(newUserId, newSessionData)
 
             res.cookie('userId', newUserId)
 
@@ -932,9 +939,9 @@ app.get('/favicon.ico', function (req, res) {
 })
 
 app.get('/sayMyName/:id', function (req, res) {
-    let userId = active_users.get(req.params.id)
+    let userMail = active_users.get(req.params.id).email
 
-    let user = user_db.get(userId)
+    let user = user_db.get(userMail)
 
     if (user === undefined) {
         res.writeHead(400)
@@ -943,7 +950,7 @@ app.get('/sayMyName/:id', function (req, res) {
     }
 
     console.log('say my name: ' + user.username)
-    console.log(active_users)
+
     res.writeHead(200)
     res.write(JSON.stringify({username: user.username}))
     res.send()
