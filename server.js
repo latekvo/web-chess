@@ -540,22 +540,30 @@ function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 }
 
 app.post('/declareReady', (req, res) => {
+    console.log('player join confirmation attempt')
+
     let reqBody = req.body
     let requesterId = reqBody["userId"]
     let requester = user_db.get(active_users.get(requesterId))
     let board = board_db.get(requester.currentBoardId)
 
-    let playerWhite = user_db.get(active_users.get(board.whiteId))
-    let playerBlack = user_db.get(active_users.get(board.blackId))
+    let playerWhite = user_db.get(board.whiteEmail)
+    let playerBlack = user_db.get(board.blackEmail)
+
+    //console.log(playerWhite)
+    //console.log(playerBlack)
 
     // check if the other player is ready, if so, send back both replies
     // if not, set this response as the player's awaited response
     if ((playerWhite !== undefined && playerWhite.awaitedRequest !== undefined) ||
         (playerBlack !== undefined && playerBlack.awaitedRequest !== undefined)) {
 
+        console.log('ready status: both players ready: ' + requester.username + ' has joined')
+
         let requesterColor = undefined
 
-        if (playerWhite.awaitedRequest !== undefined) {
+        if (playerWhite !== undefined) {
+            console.log('player ' + playerWhite.username + ' is now playing')
             playerWhite.awaitedRequest.writeHead(200)
             playerWhite.awaitedRequest.write(JSON.stringify({color: pe.WHITE}))
             playerWhite.awaitedRequest.send()
@@ -564,6 +572,7 @@ app.post('/declareReady', (req, res) => {
 
             requesterColor = pe.BLACK
         } else {
+            console.log('player ' + playerBlack.username + ' is now playing')
             playerBlack.awaitedRequest.writeHead(200)
             playerBlack.awaitedRequest.write(JSON.stringify({color: pe.BLACK}))
             playerBlack.awaitedRequest.send()
@@ -573,13 +582,19 @@ app.post('/declareReady', (req, res) => {
             requesterColor = pe.WHITE
         }
 
-        requester.awaitedRequest.writeHead(200)
-        requester.awaitedRequest.write(JSON.stringify({color: requesterColor}))
-        requester.awaitedRequest.send()
+        console.log('player ' + requester.username + ' is now playing')
+
+        res.writeHead(200)
+        res.write(JSON.stringify({color: requesterColor}))
+        res.send()
 
         requester.awaitedRequest = undefined
     } else {
+        console.log('ready status: one player ready: ' + requester.username)
+
         requester.awaitedRequest = res
+
+        // only now do we actually determine the color
     }
 
 })
@@ -637,9 +652,6 @@ app.post('/joinGame', (req, res) => {
     let board = board_db.get(boardId)
 
     console.log('player joining: ' + boardId)
-    console.log(req.body)
-
-    let requesterColor = undefined
 
     // error detection
     if (user === undefined) {
@@ -665,27 +677,8 @@ app.post('/joinGame', (req, res) => {
         res.send()
     }
 
-    let creatorId
-
-    // fill in the remaining spot in the
-    if (board.whiteId === undefined) {
-        board.whiteId = userId
-        requesterColor = pe.WHITE
-        creatorId = board.blackId
-    } else {
-        board.blackId = userId
-        requesterColor = pe.BLACK
-        creatorId = board.whiteId
-    }
-
     open_matches_db.delete(boardId)
     user.currentBoardId = boardId
-
-    // send back an OK to the board creator to make/get move
-    creatorId.awaitedRequest.writeHead(200)
-    creatorId.awaitedRequest.write(JSON.stringify({boardId: boardId}))
-    creatorId.awaitedRequest.send()
-
 
     res.writeHead(200)
     res.write(JSON.stringify({boardId: boardId}))

@@ -64,6 +64,8 @@ getMoveRequest.onreadystatechange = function () {
         localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
         localPlayingField[f_y][f_x] = pe.BLANK
 
+        drawBoard()
+
         isSendReady = true
     }
 }
@@ -97,14 +99,29 @@ function moveStart(e) {
 }
 
 function finalizeMove() {
+    console.log('finalize move: ')
+
     let f_x = parseInt(initTarget.dataset.x),
         f_y = parseInt(initTarget.dataset.y)
 
     let t_x = parseInt(endTarget.dataset.x),
         t_y = parseInt(endTarget.dataset.y)
 
+    // if there's no opponent, move freely
+    if (localBoardId === undefined) {
+        console.log('moved locally')
+
+        localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
+        localPlayingField[f_y][f_x] = pe.BLANK
+
+        drawBoard()
+        return
+    }
+
     // only do anything if it's your turn
     if (isSendReady) {
+        console.log('moved on-line')
+
         isSendReady = false
 
         // POST /makeMove {userId, moveFrom, moveTo} (moveFrom/moveTo = {x, y})
@@ -138,7 +155,10 @@ function finalizeMove() {
         localPlayingField[f_y][f_x] = pe.BLANK
 
         drawBoard()
+        return
     }
+
+    console.log('move failed')
 }
 
 function moveEnd(e) {
@@ -379,17 +399,17 @@ function getOpenMatches() {
                 joinButton.addEventListener('click', joinGame)
 
                 listItem.appendChild(joinButton)
-                listItem.appendChild(boardId)
                 listItem.appendChild(playerId)
                 listItem.appendChild(playerRating)
+                listItem.appendChild(boardId)
 
                 matchList.appendChild(listItem)
             })
         })
 }
 
-// Check for matches every 4 seconds
-setInterval(getOpenMatches, 4000)
+// Check for matches every 1.5 seconds
+setInterval(getOpenMatches, 1500)
 
 let assertReadyRequest = new XMLHttpRequest();
 
@@ -423,6 +443,8 @@ assertReadyRequest.onreadystatechange = function () {
 };
 
 function assertReady() {
+    console.log('declaring readiness')
+
     let data = {
         userId: localUserId
     }
@@ -430,16 +452,23 @@ function assertReady() {
     console.log(data)
 
     createGameRequest.open("POST", "/declareReady", true)
-    createGameRequest.setRequestHeader("Content-Type","application/json")
+    createGameRequest.setRequestHeader("Content-Type", "application/json")
     createGameRequest.send(JSON.stringify(data))
 }
 
 let joinGameRequest = new XMLHttpRequest();
 
+// a hacky way to avoid responding to the same request twice or even thrice
+let didAlreadyJoin = false
 joinGameRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(createGameRequest.responseText);
 
+        if (didAlreadyJoin)
+            return
+        didAlreadyJoin = true
+
+        console.log('joined successfully, setting boardId, sending assertReady, redrawing login info')
         localBoardId = rawData["boardId"]
 
         assertReady()
@@ -450,6 +479,8 @@ joinGameRequest.onreadystatechange = function () {
 // POST /joinGame {userId, boardId}
 function joinGame(e) {
 
+    console.log('try joining game')
+
     if (e.target === null || e.target === undefined)
         return
 
@@ -458,6 +489,7 @@ function joinGame(e) {
         boardId: e.target.dataset.boardId
     }
 
+    console.log('joining request sent: ')
     console.log(data)
 
     createGameRequest.open("POST", "/joinGame", true)
@@ -467,11 +499,18 @@ function joinGame(e) {
 
 let createGameRequest = new XMLHttpRequest();
 
+let didAlreadyCreate = false
 createGameRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(createGameRequest.responseText);
 
+        if (didAlreadyCreate)
+            return
+        didAlreadyCreate = true
+
         localBoardId = rawData["boardId"]
+
+        console.log('created game successfully, declaring readiness, redrawing login info')
 
         assertReady()
         drawLoginInfo()
