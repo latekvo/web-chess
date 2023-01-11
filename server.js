@@ -546,11 +546,10 @@ app.post('/declareReady', (req, res) => {
     let board = board_db.get(requester.currentBoardId)
 
     let playerWhite = user_db.get(active_users.get(board.whiteId))
-    let playerBlack = user_db.get(active_users.get(board.whiteId))
+    let playerBlack = user_db.get(active_users.get(board.blackId))
 
     // check if the other player is ready, if so, send back both replies
     // if not, set this response as the player's awaited response
-
     if ((playerWhite !== undefined && playerWhite.awaitedRequest !== undefined) ||
         (playerBlack !== undefined && playerBlack.awaitedRequest !== undefined)) {
 
@@ -642,6 +641,7 @@ app.post('/joinGame', (req, res) => {
 
     let requesterColor = undefined
 
+    // error detection
     if (user === undefined) {
         res.writeHead(400)
         res.write(JSON.stringify({error: errorCode.SESSION_TIMED_OUT}))
@@ -688,7 +688,7 @@ app.post('/joinGame', (req, res) => {
 
 
     res.writeHead(200)
-    res.write(JSON.stringify({color: requesterColor}))
+    res.write(JSON.stringify({boardId: boardId}))
     res.send()
 });
 

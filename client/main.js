@@ -15,8 +15,7 @@ let localOpponentUsername = undefined
 let localUserId = undefined
 let localUsername = undefined
 
-let isMoveReady = false, // pre-move mechanic, waits with the request until getMove request returns
-    isSendReady = false  // if it's not a pre-move, can we send it or is it not our turn
+let isSendReady = false  // if it's not a pre-move, can we send it or is it not our turn
 
 let initTarget = undefined,
     endTarget = undefined
@@ -49,6 +48,24 @@ if (localUserId !== undefined) {
     console.log('sent user request')
     getMyUsernameRequest.open("GET", '/sayMyName/' + localUserId)
     getMyUsernameRequest.send()
+}
+
+let getMoveRequest = new XMLHttpRequest();
+
+getMoveRequest.onreadystatechange = function () {
+    if (this.status === 200 && this.readyState === 4) {
+        let rawData = JSON.parse(assertReadyRequest.responseText)
+        // receives {moveFrom, moveTo}
+
+        // todo: check if parseInt is required, if so, apply a fix across the whole project
+        let {f_x, f_y} = rawData["moveFrom"],
+            {t_x, t_y} = rawData["moveTo"]
+
+        localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
+        localPlayingField[f_y][f_x] = pe.BLANK
+
+        isSendReady = true
+    }
 }
 
 let makeMoveRequest = new XMLHttpRequest();
@@ -86,7 +103,10 @@ function finalizeMove() {
     let t_x = parseInt(endTarget.dataset.x),
         t_y = parseInt(endTarget.dataset.y)
 
+    // only do anything if it's your turn
     if (isSendReady) {
+        isSendReady = false
+
         // POST /makeMove {userId, moveFrom, moveTo} (moveFrom/moveTo = {x, y})
         let data = {
             userId: localUserId,
@@ -112,8 +132,12 @@ function finalizeMove() {
         createGameRequest.open("POST", "/getMove", true)
         createGameRequest.setRequestHeader("Content-Type", "application/json")
         createGameRequest.send(JSON.stringify(data))
-    } else {
-        isMoveReady = true
+
+
+        localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
+        localPlayingField[f_y][f_x] = pe.BLANK
+
+        drawBoard()
     }
 }
 
@@ -130,8 +154,6 @@ function moveEnd(e) {
         endTarget = undefined
         isClicked = false
 
-        isMoveReady = false
-
         return
     }
 
@@ -146,8 +168,6 @@ function moveEnd(e) {
         initTarget = e.target
         endTarget = undefined
 
-        isMoveReady = false
-
         isClicked = true
 
         e.target.style.background = 'tomato'
@@ -161,10 +181,6 @@ function moveEnd(e) {
 
     // UNRESOLVED = fine, apply the changes
     if (checkMove(f_x, f_y, t_x, t_y) === boardState.UNRESOLVED) {
-        localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
-        localPlayingField[f_y][f_x] = pe.BLANK
-
-        drawBoard()
 
         finalizeMove()
     }
@@ -307,37 +323,6 @@ function drawBoard() {
         field.addEventListener('mousedown', boardClickListener)
     })
 
-}
-
-/* IMPLEMENTATION WILL BE SUSPENDED FOR THE TIME BEING
-function reDownloadBoard() {
-    let requestForBoard = new XMLHttpRequest();
-}
-*/
-
-/* IMPLEMENTATION WILL BE SUSPENDED FOR THE TIME BEING
-let anonymousLoginRequest = new XMLHttpRequest();
-function getTemporaryId() {
-    anonymousLoginRequest.open("GET", "/getAnonId/", true);
-    anonymousLoginRequest.send();
-}
-*/
-
-let getMoveRequest = new XMLHttpRequest();
-
-getMoveRequest.onreadystatechange = function () {
-    if (this.status === 200 && this.readyState === 4) {
-        let rawData = JSON.parse(assertReadyRequest.responseText)
-
-        if (isMoveReady) {
-            // if there's a pre-move, apply it immediately
-
-
-        } else {
-            //
-
-        }
-    }
 }
 
 function getOpenMatches() {
@@ -590,61 +575,18 @@ postsRequest.onreadystatechange = function () {
 
         document.getElementById("postings").innerHTML = wholePage;
     }
-};
-
-MAKE DRAGGABLE ELEMENT - will not use this, after all
-modify this code to suit the chessboard's needs, implement snapping to fields
-SOURCE: https://www.w3schools.com/howto/howto_js_draggable.asp
-
-QUICK EXPLANATION:
- - get element by [id], overwrite it's
-    * 'onmousedown' function-name with our 'start-dragging' function
- - get root document, for the time of dragging, overwrite root's
-    * 'onmousemove' function-name with our 'drag' function
-    * 'onmouseup' function-name with our 'stop-dragging' function
-
-makeDraggable(document.getElementById("mydiv"));
-
-function makeDraggable(element) {
-  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  if (document.getElementById(element.id + "header")) {
-    // if present, the header is where you move the DIV from:
-    document.getElementById(element.id + "header").onmousedown = dragMouseDown;
-  } else {
-    // otherwise, move the DIV from anywhere inside the DIV:
-    element.onmousedown = dragMouseDown;
-  }
 }
 
-function dragMouseDown(e) {
-    e = e || window.event;
-    e.preventDefault();
-    // get the mouse cursor position at startup:
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    document.onmouseup = closeDragElement;
-    // call a function whenever the cursor moves:
-    document.onmousemove = elementDrag;
+/* IMPLEMENTATION WILL BE SUSPENDED FOR THE TIME BEING
+function reDownloadBoard() {
+    let requestForBoard = new XMLHttpRequest();
 }
+*/
 
-function elementDrag(e) {
-    e = e || window.event;
-    e.preventDefault();
-    // calculate the new cursor position:
-    pos1 = pos3 - e.clientX;
-    pos2 = pos4 - e.clientY;
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    // set the element's new position:
-    element.style.top = (element.offsetTop - pos2) + "px";
-    element.style.left = (element.offsetLeft - pos1) + "px";
+/* IMPLEMENTATION WILL BE SUSPENDED FOR THE TIME BEING
+let anonymousLoginRequest = new XMLHttpRequest();
+function getTemporaryId() {
+    anonymousLoginRequest.open("GET", "/getAnonId/", true);
+    anonymousLoginRequest.send();
 }
-
-function closeDragElement() {
-    // stop moving when mouse button is released:
-    document.onmouseup = null;
-    document.onmousemove = null;
-}
-
-
 */
