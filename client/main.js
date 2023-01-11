@@ -79,6 +79,44 @@ function moveStart(e) {
     }
 }
 
+function finalizeMove() {
+    let f_x = parseInt(initTarget.dataset.x),
+        f_y = parseInt(initTarget.dataset.y)
+
+    let t_x = parseInt(endTarget.dataset.x),
+        t_y = parseInt(endTarget.dataset.y)
+
+    if (isSendReady) {
+        // POST /makeMove {userId, moveFrom, moveTo} (moveFrom/moveTo = {x, y})
+        let data = {
+            userId: localUserId,
+            moveFrom: {x: f_x, y: f_y},
+            moveTo: {x: t_x, y: t_y}
+        }
+
+        console.log('sending MAKE MOVE')
+        console.log(data)
+
+        createGameRequest.open("POST", "/makeMove", true)
+        createGameRequest.setRequestHeader("Content-Type", "application/json")
+        createGameRequest.send(JSON.stringify(data))
+
+        // this request is sent now but will be returned only after the opponent makes a move
+        data = {
+            userId: localUserId
+        }
+
+        console.log('sending GET MOVE')
+        console.log(data)
+
+        createGameRequest.open("POST", "/getMove", true)
+        createGameRequest.setRequestHeader("Content-Type", "application/json")
+        createGameRequest.send(JSON.stringify(data))
+    } else {
+        isMoveReady = true
+    }
+}
+
 function moveEnd(e) {
     endTarget = e.target
 
@@ -105,13 +143,17 @@ function moveEnd(e) {
 
     // CLICK ON OWN COLOR - switch the starting point
     if (getColor(localPlayingField[t_y][t_x]) === localPieceColor) {
-        initTarget = endTarget
+        initTarget = e.target
         endTarget = undefined
 
         isMoveReady = false
 
         isClicked = true
 
+        e.target.style.background = 'tomato'
+        markedSquare = e.target
+
+        castRay(initTarget)
         return
     }
 
@@ -124,36 +166,7 @@ function moveEnd(e) {
 
         drawBoard()
 
-        // TODO: SEND MOVE TO SERVER
-        // POST /makeMove {userId, moveFrom, moveTo} (moveFrom/moveTo = {x, y})
-        let data = {
-            userId: localUserId,
-            moveFrom: {x: f_x, y: f_y},
-            moveTo: {x: t_x, y: t_y}
-        }
-
-        if (isSendReady) {
-            console.log('sending MAKE MOVE')
-            console.log(data)
-
-            createGameRequest.open("POST", "/makeMove", true)
-            createGameRequest.setRequestHeader("Content-Type", "application/json")
-            createGameRequest.send(JSON.stringify(data))
-
-            // this request is sent now but will be returned only after the opponent makes a move
-            data = {
-                userId: localUserId
-            }
-
-            console.log('sending GET MOVE')
-            console.log(data)
-
-            createGameRequest.open("POST", "/getMove", true)
-            createGameRequest.setRequestHeader("Content-Type", "application/json")
-            createGameRequest.send(JSON.stringify(data))
-        } else {
-            isMoveReady = true
-        }
+        finalizeMove()
     }
 
     isClicked = false
@@ -167,11 +180,9 @@ function boardClickListener(e) {
     if (markedSquare !== undefined)
         markedSquare.style.background = ''
 
-    if (rayCastBlobbedSquares !== []) {
-        rayCastBlobbedSquares.forEach((el) => {
-            el.style.borderRadius = '0'
-        })
-    }
+    rayCastBlobbedSquares.forEach((el) => {
+        el.style.borderRadius = '0'
+    })
 
     if (isClicked)
         moveEnd(e)
@@ -402,17 +413,26 @@ assertReadyRequest.onreadystatechange = function () {
         let rawData = JSON.parse(assertReadyRequest.responseText);
 
         localPieceColor = rawData["color"]
+        localPlayingField = blankBoardPrefab
 
         drawBoard()
 
         // to move
         if (localPieceColor === pe.WHITE) {
-
+            isSendReady = true
         }
 
         // to listen
         if (localPieceColor === pe.BLACK) {
+            let data = {
+                userId: localUserId,
+            }
 
+            console.log(data)
+
+            createGameRequest.open("POST", "/getMove", true)
+            createGameRequest.setRequestHeader("Content-Type","application/json")
+            createGameRequest.send(JSON.stringify(data))
         }
     }
 };

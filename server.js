@@ -223,7 +223,7 @@ function getPieceIt(pieceId) {
 
 /**
  * based on a raw board array, returns 'true' if there is a mate present
- * @param {Array} boardId - board's id
+ * @param {String} boardId - board's id
  *
  * @param f_x - move's x origin
  * @param f_y - move's y origin
@@ -247,6 +247,7 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 
     // error, request corrupted, the square is blank
     if (pieceIt === -1) {
+        console.log('ERROR: player tried moving a blank space')
         return boardState.INVALID
     }
 
@@ -259,35 +260,36 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
             vel_y = 0
 
         // x - find the correct vector
-        if (f_x >= t_x) vel_x = -1
-        if (f_x <= t_x) vel_x = 1
+        if (f_x > t_x) vel_x = -1
+        if (f_x < t_x) vel_x = 1
 
-        if (f_y >= t_y) vel_y = -1
-        if (f_y <= t_y) vel_y = 1
+        if (f_y > t_y) vel_y = -1
+        if (f_y < t_y) vel_y = 1
 
 
         let ray = {x: f_x, y: f_y}
 
+        // iterate the ray
+        ray.x += vel_x
+        ray.y += vel_y
+
         // cast the ray
-        for (let i = 0; i < 8; i++) {
+        while (ray.x >= 0 && ray.x < 8 && ray.y >= 0 && ray.y < 8) {
+
+            // reached the destination
+            if (ray.x === t_x && ray.y === t_y) {
+                isMovePossible = true
+                break
+            }
+
+            // check for: line of sight
+            if (board[ray.y][ray.x] !== pe.BLANK) {
+                break
+            }
 
             // iterate the ray
             ray.x += vel_x
             ray.y += vel_y
-
-            // check for: not being out of bounds
-            if (!(0 < ray.x && ray.x < 7) || !(0 < ray.y && ray.y < 7))
-                break
-
-            /* reached destination, and enemy is the opposite color */
-            if (f_x === t_x && f_y === t_y) {
-                isMovePossible = true
-            }
-
-            // check for: line of sight
-            if (board[ray.y][ray.x] !== pe.BLANK)
-                break
-
         }
 
     } else /* (isPosBased) */ {
@@ -297,8 +299,9 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 
         // and just check if there exists a fitting mask for such a move
         for (let i = 0; i < mov_pos_list[pieceIt].positions.length; i++) {
-            if (mask_x === mov_pos_list[pieceIt].positions[i].x &&
-                mask_y === mov_pos_list[pieceIt].positions[i].y) {
+
+            if (mask_x === mov_pos_list[pieceIt].positions[i][0] &&
+                mask_y === mov_pos_list[pieceIt].positions[i][1]) {
 
                 isMovePossible = true
                 break
@@ -309,6 +312,7 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     // move will be impossible if both pieces are the same color
     if (pieceCol === getColor(board[t_y][t_x])) {
         isMovePossible = false
+        console.log('player tried moving pieces into each other')
     }
 
     // CHECK FOR A MATE
@@ -317,9 +321,9 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     // * if there is an attacking element in the way of the ray, announce a check
     // * only way to lose (for simplicity) is to resign, so if the king can't move, he needs to resign.
     // ? why is that? besides checking for king's space, I would need to check if any piece can get in the way of ray
-    // ? and that will be complicated. This is on a far off TODO list
+    // ? and that will be complicated.
 
-    let white_king, black_king
+    let white_king = undefined, black_king = undefined
 
     // find coords of the kings
     for (let y = 0; y < 8; y++) {
@@ -360,25 +364,32 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
                 if (!(0 < ray_b.x && ray_b.x < 7) || !(0 < ray_b.y && ray_b.y < 7))
                     bStopRay = true;
 
+                if (wStopRay && bStopRay)
+                    break
+
                 // check for the piece attacking a king
                 for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
-                    if (wStopRay === false && board[ray_w.y][ray_w.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                    if (wStopRay === false && board[ray_w.y][ray_w.x] === atk_vel_list[caseId].pieces[pieceId] &&
+                        getColor(atk_vel_list[caseId].pieces[pieceId]) === pe.BLACK) {
                         isWhiteMated = true;
                         wStopRay = true;
                     }
-                    if (bStopRay === false && board[ray_b.y][ray_b.x] === atk_vel_list[caseId].pieces[pieceId]) {
+                    if (bStopRay === false && board[ray_b.y][ray_b.x] === atk_vel_list[caseId].pieces[pieceId] &&
+                        getColor(atk_vel_list[caseId].pieces[pieceId]) === pe.WHITE) {
                         isBlackMated = true;
                         bStopRay = true;
                     }
                 }
 
                 // check for: line of sight
-                if (board[ray_w.y][ray_w.x] !== pe.BLANK)
+                if (wStopRay === false && board[ray_w.y][ray_w.x] !== pe.BLANK)
                     wStopRay = true;
 
-                if (board[ray_b.y][ray_b.x] !== pe.BLANK)
+                if (bStopRay === false && board[ray_b.y][ray_b.x] !== pe.BLANK)
                     bStopRay = true;
 
+                if (wStopRay && bStopRay)
+                    break
             }
 
         }
@@ -408,21 +419,32 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
                 bStopChecking = true
 
             for (let pieceId = 0; pieceId < atk_pos_list[caseId].pieces.length; pieceId++) {
-                if (wStopChecking === false && board[point_w.y][point_w.x] === atk_pos_list[caseId].pieces[pieceId]) {
+                if (wStopChecking === false && board[point_w.y][point_w.x] === atk_pos_list[caseId].pieces[pieceId] &&
+                    getColor(atk_pos_list[caseId].pieces[pieceId]) === pe.BLACK) {
                     isWhiteMated = true
                 }
-                if (bStopChecking === false && board[point_b.y][point_b.x] === atk_pos_list[caseId].pieces[pieceId]) {
+                if (bStopChecking === false && board[point_b.y][point_b.x] === atk_pos_list[caseId].pieces[pieceId] &&
+                    getColor(atk_pos_list[caseId].pieces[pieceId]) === pe.WHITE) {
                     isBlackMated = true
                 }
             }
         }
     }
 
+    // to check for lock (game over):
+    /* - check every possible king's move
+    *  - have an attacking ray, check if anything can move into it
+    *  - if there are multiple rays, it's an outright loss
+    * */
     let isWhiteLocked = false
     let isBlackLocked = false
 
     // todo: besides checking for check, see if it's possible to escape this check, or to block it.
-    // only calculated to reassure either isWhiteMated or isBlackMated, either of them has to be true
+    //  only calculated to reassure either isWhiteMated or isBlackMated, either of them has to be true
+
+    console.log('is Mate? ' + isWhiteMated + ' ' + isBlackMated +
+        'is Lock? ' + isWhiteLocked + ' ' + isBlackLocked +
+        'is Possible? ' + isMovePossible)
 
     if (!isMovePossible)
         return boardState.INVALID
@@ -444,6 +466,7 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     if (isWhiteMated && isBlackMated)
         output = boardState.INVALID
 
+    console.log('gave OK to a move on board:  ' + boardId)
     return output;
 }
 
