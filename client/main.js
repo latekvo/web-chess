@@ -59,6 +59,8 @@ makeMoveRequest.onreadystatechange = function () {
         console.log('move successfully submitted')
     }
 }
+
+let markedSquare = undefined
 // get clicked field, and highlight it
 function moveStart(e) {
     initTarget = e.target
@@ -70,7 +72,10 @@ function moveStart(e) {
         console.log('piece picked up, ready to place')
         isClicked = true
 
-        castRay()
+        e.target.style.background = 'tomato'
+        markedSquare = e.target
+
+        castRay(initTarget)
     }
 }
 
@@ -80,11 +85,14 @@ function moveEnd(e) {
     if (endTarget === null || endTarget === undefined)
         return
 
+
     // CLICK ON SELF - cancel the click
     if (initTarget === endTarget) {
         initTarget = undefined
         endTarget = undefined
         isClicked = false
+
+        isMoveReady = false
 
         return
     }
@@ -100,10 +108,14 @@ function moveEnd(e) {
         initTarget = endTarget
         endTarget = undefined
 
+        isMoveReady = false
+
         isClicked = true
 
         return
     }
+
+    console.log('checkMove return code: ' + checkMove(f_x, f_y, t_x, t_y))
 
     // UNRESOLVED = fine, apply the changes
     if (checkMove(f_x, f_y, t_x, t_y) === boardState.UNRESOLVED) {
@@ -120,26 +132,29 @@ function moveEnd(e) {
             moveTo: {x: t_x, y: t_y}
         }
 
-        console.log('sending MAKE MOVE')
-        console.log(data)
+        if (isSendReady) {
+            console.log('sending MAKE MOVE')
+            console.log(data)
 
-        createGameRequest.open("POST", "/makeMove", true)
-        createGameRequest.setRequestHeader("Content-Type","application/json")
-        createGameRequest.send(JSON.stringify(data))
+            createGameRequest.open("POST", "/makeMove", true)
+            createGameRequest.setRequestHeader("Content-Type", "application/json")
+            createGameRequest.send(JSON.stringify(data))
 
-        // this request is sent now but will be returned only after the opponent makes a move
-        data = {
-            userId: localUserId
+            // this request is sent now but will be returned only after the opponent makes a move
+            data = {
+                userId: localUserId
+            }
+
+            console.log('sending GET MOVE')
+            console.log(data)
+
+            createGameRequest.open("POST", "/getMove", true)
+            createGameRequest.setRequestHeader("Content-Type", "application/json")
+            createGameRequest.send(JSON.stringify(data))
+        } else {
+            isMoveReady = true
         }
-
-        console.log('sending GET MOVE')
-        console.log(data)
-
-        createGameRequest.open("POST", "/getMove", true)
-        createGameRequest.setRequestHeader("Content-Type","application/json")
-        createGameRequest.send(JSON.stringify(data))
     }
-
 
     isClicked = false
 }
@@ -148,6 +163,15 @@ function moveEnd(e) {
 function boardClickListener(e) {
     console.log('clicked on board')
     console.log(e.target)
+
+    if (markedSquare !== undefined)
+        markedSquare.style.background = ''
+
+    if (rayCastBlobbedSquares !== []) {
+        rayCastBlobbedSquares.forEach((el) => {
+            el.style.borderRadius = '0'
+        })
+    }
 
     if (isClicked)
         moveEnd(e)
@@ -414,6 +438,7 @@ joinGameRequest.onreadystatechange = function () {
         localBoardId = rawData["boardId"]
 
         assertReady()
+        drawLoginInfo()
     }
 };
 
@@ -444,6 +469,7 @@ createGameRequest.onreadystatechange = function () {
         localBoardId = rawData["boardId"]
 
         assertReady()
+        drawLoginInfo()
     }
 };
 
@@ -486,14 +512,16 @@ function drawLoginInfo() {
         '    <button id="go-login" class="flex-item menu-button">LOGIN</button>' +
         '</a>'
 
+    let opponentUsername = 'unknown'// todo: implement this
+
     let boardDataText =
-        'Current match: ${localBoardId}<br>Current opponent:  ${localOpponentUsername}<br>'
+        'Current match:<br>' + localBoardId + '<br>Current opponent:<br>' + opponentUsername + '<br>'
 
     if (localBoardId === undefined)
         boardDataText = ""
 
     let loginInfoLoggedInPage =
-        '<div id="user-details" class="flex-item">Username: ' + localUsername + '<br>' + boardDataText + '</div>' +
+        '<div id="user-details" class="flex-item">Username: <br>' + localUsername + '<br>' + boardDataText + '</div>' +
         '<button id="go-logout" class="flex-item menu-button">LOGOUT</button>'
 
     if (localUserId === undefined) {

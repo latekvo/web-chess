@@ -15,31 +15,95 @@ function getColor(piece_id) {
     return pe.BLACK
 }
 
-function castRay(initElement) {
-    let x = initElement.dataset.x,
-        y = initElement.dataset.y
-
-    let pieceId = localPlayingField[y][x]
-
+// rewrite this if possible, it's just a quick hack
+function getPieceIt(pieceId) {
     let pieceIt = -1
     let isPosBased = false
+
     for (let i = 0; i < mov_vel_list.length; i++) {
-        if (mov_vel_list[i].pieces === pieceId)
+        if (mov_vel_list[i].pieces.includes(pieceId))
             pieceIt = i
     }
     for (let i = 0; i < mov_pos_list.length; i++) {
-        if (mov_pos_list[i].pieces === pieceId) {
+        if (mov_pos_list[i].pieces.includes(pieceId)) {
             pieceIt = i
             isPosBased = true
         }
     }
 
+    return {pieceIt: pieceIt, isPosBased: isPosBased}
+}
+
+let rayCastBlobbedSquares = []
+function castRay(initElement) {
+    if (initElement === undefined || initElement === null)
+        return
+
+    let x = parseInt(initElement.dataset.x),
+        y = parseInt(initElement.dataset.y)
+
+    let pieceId = localPlayingField[y][x]
+
+    let {pieceIt, isPosBased} = getPieceIt(pieceId)
+
+    console.log(pieceIt)
+
+    // this is the correct style, add these elements to the rayCastBlobbedSquares
     if (!isPosBased) {
+        console.log('move type: vel')
         // CAST A RAY
+        mov_vel_list[pieceIt].velocities.forEach((e) => {
 
+            let r_x = x, r_y = y
+
+            r_x += e[0]
+            r_y += e[1]
+
+            while (!(r_x < 0 || r_x > 7 || r_y < 0 || r_y > 7 )) {
+
+                let hor = String.fromCharCode('a'.charCodeAt(0) + r_x)
+
+                let ver = String(r_y + 1)
+
+                let id = hor + ver
+
+                console.log('id: ' + id)
+
+                let htmlElement = document.getElementById(id)
+                htmlElement.style.borderRadius = '35%'
+                rayCastBlobbedSquares.push(htmlElement)
+
+                r_x += e[0]
+                r_y += e[1]
+            }
+        })
     } else {
+        console.log('move type: pos')
         // DOT EVERY POSITION
+        mov_pos_list[pieceIt].positions.forEach((e) => {
 
+            let hor = x + e[0]
+            /*if (localPieceColor === pe.BLACK)
+                hor = 7 - hor*/
+
+            let ver = y + e[1]
+            /*if (localPieceColor === pe.WHITE)
+                ver = 7 - ver*/
+
+            if (hor < 0 || hor > 7 || ver < 0 || ver > 7 )
+                return
+
+            console.log('hor: ' + hor + ' ver: ' + ver)
+
+            hor = String.fromCharCode('a'.charCodeAt(0) + hor)
+            ver = String(ver + 1)
+
+            let id = hor + ver
+
+            let htmlElement = document.getElementById(id)
+            htmlElement.style.borderRadius = '35%'
+            rayCastBlobbedSquares.push(htmlElement)
+        })
     }
 
 }
@@ -61,18 +125,7 @@ function checkMove(f_x, f_y, t_x, t_y) {
     // pos-check - check for friendlies at the destination
 
     // find piece's iterator in the mov_vel_list or mov_pos_list
-    let pieceIt = -1
-    let isPosBased = false
-    for (let i = 0; i < mov_vel_list.length; i++) {
-        if (mov_vel_list[i].pieces === pieceId)
-            pieceIt = i
-    }
-    for (let i = 0; i < mov_pos_list.length; i++) {
-        if (mov_pos_list[i].pieces === pieceId) {
-            pieceIt = i
-            isPosBased = true
-        }
-    }
+    let {pieceIt, isPosBased} = getPieceIt(pieceId)
 
     // error, request corrupted, the square is blank
     if (pieceIt === -1) {

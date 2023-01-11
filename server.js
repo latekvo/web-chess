@@ -198,6 +198,30 @@ function getColor(piece_id) {
 }
 
 /**
+ * Returns piece iterator in the mov_vel_list or mov_pos_list
+ * @param {Number} pieceId - id of the piece
+ * @returns {{pieceIt: number, isPosBased: boolean}} pieceIt, isPosBased - iterator of the piece, piece's belonging to either vel or pos list
+ **/
+function getPieceIt(pieceId) {
+    let pieceIt = -1
+    let isPosBased = false
+
+    for (let i = 0; i < mov_vel_list.length; i++) {
+        if (mov_vel_list[i].pieces.includes(pieceId))
+            pieceIt = i
+    }
+    for (let i = 0; i < mov_pos_list.length; i++) {
+        if (mov_pos_list[i].pieces.includes(pieceId)) {
+            pieceIt = i
+            isPosBased = true
+        }
+    }
+
+    return {pieceIt: pieceIt, isPosBased: isPosBased}
+}
+
+
+/**
  * based on a raw board array, returns 'true' if there is a mate present
  * @param {Array} boardId - board's id
  *
@@ -219,18 +243,7 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
     // pos-check - check for friendlies at the destination
 
     // find piece's iterator in the mov_vel_list or mov_pos_list
-    let pieceIt = -1
-    let isPosBased = false
-    for (let i = 0; i < mov_vel_list.length; i++) {
-        if (mov_vel_list[i].pieces === pieceId)
-            pieceIt = i
-    }
-    for (let i = 0; i < mov_pos_list.length; i++) {
-        if (mov_pos_list[i].pieces === pieceId) {
-            pieceIt = i
-            isPosBased = true
-        }
-    }
+    let {pieceIt, isPosBased} = getPieceIt(pieceId)
 
     // error, request corrupted, the square is blank
     if (pieceIt === -1) {
@@ -265,7 +278,6 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
             // check for: not being out of bounds
             if (!(0 < ray.x && ray.x < 7) || !(0 < ray.y && ray.y < 7))
                 break
-
 
             /* reached destination, and enemy is the opposite color */
             if (f_x === t_x && f_y === t_y) {
@@ -850,7 +862,6 @@ app.get('/games', function (req, res) {
 
     console.log('open games: ')
     console.log(open_matches_db)
-    console.log(recentGames)
 
     recentGames.forEach((boardId) => {
         let board = board_db.get(boardId)
