@@ -37,8 +37,8 @@ let getMyUsernameRequest = new XMLHttpRequest();
 getMyUsernameRequest.onreadystatechange = function () {
     console.log("received user's username")
     if (this.readyState === 4 && this.status === 200) {
-        localUsername = JSON.parse(getMyUsernameRequest.responseText)['username']
-        console.log(JSON.parse(getMyUsernameRequest.responseText)['username'])
+        localUsername = JSON.parse(this.responseText)['username']
+        console.log(JSON.parse(this.responseText)['username'])
 
         drawLoginInfo()
     }
@@ -54,7 +54,7 @@ let getMoveRequest = new XMLHttpRequest();
 
 getMoveRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
-        let rawData = JSON.parse(assertReadyRequest.responseText)
+        let rawData = JSON.parse(this.responseText)
         // receives {moveFrom, moveTo}
 
         // todo: check if parseInt is required, if so, apply a fix across the whole project
@@ -134,9 +134,9 @@ function finalizeMove() {
         console.log('sending MAKE MOVE')
         console.log(data)
 
-        createGameRequest.open("POST", "/makeMove", true)
-        createGameRequest.setRequestHeader("Content-Type", "application/json")
-        createGameRequest.send(JSON.stringify(data))
+        makeMoveRequest.open("POST", "/makeMove", true)
+        makeMoveRequest.setRequestHeader("Content-Type", "application/json")
+        makeMoveRequest.send(JSON.stringify(data))
 
         // this request is sent now but will be returned only after the opponent makes a move
         data = {
@@ -146,9 +146,9 @@ function finalizeMove() {
         console.log('sending GET MOVE')
         console.log(data)
 
-        createGameRequest.open("POST", "/getMove", true)
-        createGameRequest.setRequestHeader("Content-Type", "application/json")
-        createGameRequest.send(JSON.stringify(data))
+        getMoveRequest.open("POST", "/getMove", true)
+        getMoveRequest.setRequestHeader("Content-Type", "application/json")
+        getMoveRequest.send(JSON.stringify(data))
 
 
         localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
@@ -413,13 +413,30 @@ setInterval(getOpenMatches, 1500)
 
 let assertReadyRequest = new XMLHttpRequest();
 
+let didAlreadyDeclareReady = false
 assertReadyRequest.onreadystatechange = function () {
-    if (this.status === 200 && this.readyState === 4) {
-        let rawData = JSON.parse(assertReadyRequest.responseText);
 
+    console.log('readiness response: ')
+    if (this.status === 200 && this.readyState === 4) {
+        let rawData = JSON.parse(this.responseText)
+
+        console.log('declared readiness successfully')
+
+        if (rawData["color"] === undefined){
+            console.log('no color available in the response')
+            return
+        }
+
+        if (didAlreadyDeclareReady) {
+            console.log('multiple responses, returning')
+            return
+        }
+        didAlreadyDeclareReady = true
+        
         localPieceColor = rawData["color"]
         localPlayingField = blankBoardPrefab
 
+        console.log(rawData)
         drawBoard()
 
         // to move
@@ -435,9 +452,9 @@ assertReadyRequest.onreadystatechange = function () {
 
             console.log(data)
 
-            createGameRequest.open("POST", "/getMove", true)
-            createGameRequest.setRequestHeader("Content-Type","application/json")
-            createGameRequest.send(JSON.stringify(data))
+            getMoveRequest.open("POST", "/getMove", true)
+            getMoveRequest.setRequestHeader("Content-Type","application/json")
+            getMoveRequest.send(JSON.stringify(data))
         }
     }
 };
@@ -451,9 +468,9 @@ function assertReady() {
 
     console.log(data)
 
-    createGameRequest.open("POST", "/declareReady", true)
-    createGameRequest.setRequestHeader("Content-Type", "application/json")
-    createGameRequest.send(JSON.stringify(data))
+    assertReadyRequest.open("POST", "/declareReady", true)
+    assertReadyRequest.setRequestHeader("Content-Type", "application/json")
+    assertReadyRequest.send(JSON.stringify(data))
 }
 
 let joinGameRequest = new XMLHttpRequest();
@@ -462,7 +479,7 @@ let joinGameRequest = new XMLHttpRequest();
 let didAlreadyJoin = false
 joinGameRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
-        let rawData = JSON.parse(createGameRequest.responseText);
+        let rawData = JSON.parse(this.responseText);
 
         if (didAlreadyJoin)
             return
@@ -492,21 +509,16 @@ function joinGame(e) {
     console.log('joining request sent: ')
     console.log(data)
 
-    createGameRequest.open("POST", "/joinGame", true)
-    createGameRequest.setRequestHeader("Content-Type","application/json")
-    createGameRequest.send(JSON.stringify(data))
+    joinGameRequest.open("POST", "/joinGame", true)
+    joinGameRequest.setRequestHeader("Content-Type","application/json")
+    joinGameRequest.send(JSON.stringify(data))
 }
 
 let createGameRequest = new XMLHttpRequest();
 
-let didAlreadyCreate = false
 createGameRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
-        let rawData = JSON.parse(createGameRequest.responseText);
-
-        if (didAlreadyCreate)
-            return
-        didAlreadyCreate = true
+        let rawData = JSON.parse(this.responseText);
 
         localBoardId = rawData["boardId"]
 

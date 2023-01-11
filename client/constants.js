@@ -59,14 +59,14 @@ let pe = pieceEnum
 
 // this will be far simpler for using checkForMate() as compared to a list-of-pieces approach
 const blankBoardPrefab = [
-    [pe.W_R, pe.W_N, pe.W_B, pe.W_K, pe.W_Q, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
+    [pe.W_R, pe.W_N, pe.W_B, pe.W_Q, pe.W_K, pe.W_B, pe.W_N, pe.W_R], // 1 (0)
     [pe.W_P],
     [pe.BLANK],
     [pe.BLANK],
     [pe.BLANK],
     [pe.BLANK],
     [pe.B_P],
-    [pe.B_R, pe.B_N, pe.B_B, pe.B_K, pe.B_Q, pe.B_B, pe.B_N, pe.B_R] // 8 (7)
+    [pe.B_R, pe.B_N, pe.B_B, pe.B_Q, pe.B_K, pe.B_B, pe.B_N, pe.B_R] // 8 (7)
 ]
 
 for (let y = 1; y < 7; y++) {
