@@ -58,8 +58,10 @@ getMoveRequest.onreadystatechange = function () {
         // receives {moveFrom, moveTo}
 
         // todo: check if parseInt is required, if so, apply a fix across the whole project
-        let {f_x, f_y} = rawData["moveFrom"],
-            {t_x, t_y} = rawData["moveTo"]
+        let f_x = rawData["moveFrom"].x, 
+            f_y = rawData["moveFrom"].y,
+            t_x = rawData["moveTo"].x, 
+            t_y = rawData["moveTo"].y
 
         localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
         localPlayingField[f_y][f_x] = pe.BLANK
@@ -413,7 +415,6 @@ setInterval(getOpenMatches, 1500)
 
 let assertReadyRequest = new XMLHttpRequest();
 
-let didAlreadyDeclareReady = false
 assertReadyRequest.onreadystatechange = function () {
 
     console.log('readiness response: ')
@@ -426,15 +427,9 @@ assertReadyRequest.onreadystatechange = function () {
             console.log('no color available in the response')
             return
         }
-
-        if (didAlreadyDeclareReady) {
-            console.log('multiple responses, returning')
-            return
-        }
-        didAlreadyDeclareReady = true
         
         localPieceColor = rawData["color"]
-        localPlayingField = blankBoardPrefab
+        localPlayingField = structuredClone(blankBoardPrefab)
 
         console.log(rawData)
         drawBoard()
@@ -476,14 +471,9 @@ function assertReady() {
 let joinGameRequest = new XMLHttpRequest();
 
 // a hacky way to avoid responding to the same request twice or even thrice
-let didAlreadyJoin = false
 joinGameRequest.onreadystatechange = function () {
     if (this.status === 200 && this.readyState === 4) {
         let rawData = JSON.parse(this.responseText);
-
-        if (didAlreadyJoin)
-            return
-        didAlreadyJoin = true
 
         console.log('joined successfully, setting boardId, sending assertReady, redrawing login info')
         localBoardId = rawData["boardId"]

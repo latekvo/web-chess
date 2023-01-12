@@ -238,8 +238,14 @@ function getPieceIt(pieceId) {
  *
  * @returns {boardState} - UNRESOLVED if nothing got detected, otherwise describes the situation present
  */
-function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
-    let board = board_db.get(boardId).board
+function checkMove(boardId, f_x, f_y, t_x, t_y) {
+    let boardData = board_db.get(boardId)
+
+    if (boardData === undefined) {
+        return boardState.INVALID
+    }
+    
+    let board = boardData.board
 
     let pieceId = board[f_y][f_x]
     let pieceCol = getColor(pieceId)
@@ -485,7 +491,7 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 function makeBoard(whiteUserId, blackUserId) {
     let boardId = crypto.randomBytes(32).toString('hex');
 
-    let newBoard = blankBoardPrefab
+    let newBoard = {... blankBoardPrefab}
 
     newBoard.boardId = boardId
     newBoard.whiteId = whiteUserId
@@ -493,6 +499,7 @@ function makeBoard(whiteUserId, blackUserId) {
     newBoard.whiteEmail = active_users.get(whiteUserId) // doesn't matter if these are undefined
     newBoard.blackEmail = active_users.get(blackUserId) // just look 5 lines lower
     newBoard.gameState = boardState.NOT_STARTED
+    newBoard.board = {... blankBoardPrefab.board} // this has to be done as cloning does not change inner references
 
     if (newBoard.whiteEmail !== undefined)
         newBoard.whiteEmail = newBoard.whiteEmail.email
@@ -515,12 +522,17 @@ function makeBoard(whiteUserId, blackUserId) {
  * @param t_y - y of the desired position
  * @returns {boardState} - an enum indicating if the move succeeded and if there is a check or a mate present
  */
-function makeMove(boardId, {f_x, f_y}, {t_x, t_y}) {
+function makeMove(boardId, f_x, f_y, t_x, t_y) {
     // NOTE that 'board' is a reference, all modifications to it are just modifications to the element in board_db
     let board = board_db.get(boardId)
 
+    if (board === undefined) {
+        console.log('makeMove: board undefined: boardId: ' + boardId)
+        return boardState.INVALID
+    }
+
     // simply describes what is currently happening on the board
-    let state = checkMove(boardId, {f_x, f_y}, {t_x, t_y})
+    let state = checkMove(boardId, f_x, f_y, t_x, t_y)
 
     // if the move causes self to get checked, the move is invalid
     if ( state === boardState.WHITE_CHECKD && board.toMove === pe.WHITE ||
@@ -582,6 +594,9 @@ app.post('/declareReady', (req, res) => {
             whiteSessionData.awaitedRequest = undefined
 
             requesterColor = pe.BLACK
+            
+            board.blackId = requesterId
+            board.blackEmail = requesterSessionData.email
         } else {
             console.log('player ' + blackSessionData.username + ' is now playing')
             blackSessionData.awaitedRequest.writeHead(200)
@@ -591,6 +606,9 @@ app.post('/declareReady', (req, res) => {
             blackSessionData.awaitedRequest = undefined
 
             requesterColor = pe.WHITE
+
+            board.whiteId = requesterId
+            board.whiteEmail = requesterSessionData.email
         }
 
         console.log('player ' + requester.username + ' is now playing')
@@ -662,7 +680,8 @@ app.post('/joinGame', (req, res) => {
     let boardId = req.body["boardId"]
     let board = board_db.get(boardId)
 
-    console.log('player joining: ' + boardId)
+    console.log('player joining:')
+    console.log(userSessionData)
 
     // error detection
     if (user === undefined) {
@@ -683,13 +702,16 @@ app.post('/joinGame', (req, res) => {
     // this check will be triggered only if both of the players collaborate to deliberately crash/bug the server
     // todo: implement ban system
     if (!open_matches_db.has(boardId)) {
-        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
         res.writeHead(400)
+        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
         res.send()
     }
 
+    console.log('deleting ad record for: ' + boardId)
+
     open_matches_db.delete(boardId)
     userSessionData.currentBoardId = boardId
+
 
     res.writeHead(200)
     res.write(JSON.stringify({boardId: boardId}))
@@ -709,10 +731,11 @@ app.post('/getMove', (req, res) => {
     }
 });
 
-app.post('/makeMove', async (req, res) => {
+app.post('/makeMove', (req, res) => {
     let rawData = req.body
     let userId = rawData['userId']
-    let userSessionData = user_db.get(active_users.get(userId).email)
+    let userSessionData = active_users.get(userId)
+    // let user = user_db.get(userSessionData.email)
 
     // user timed out
     if (userSessionData === undefined) {
@@ -723,43 +746,64 @@ app.post('/makeMove', async (req, res) => {
     }
 
     let boardId = userSessionData.currentBoardId
-    let boardCp = board_db.get(boardId)
+    let boardData = board_db.get(boardId)
 
-    let moveStatus = await makeMove(boardId, rawData['moveFrom'], rawData['moveTo'])
+    let f_x = rawData['moveFrom'].x, 
+        f_y = rawData['moveFrom'].y,
+        t_x = rawData['moveTo'].x,
+        t_y = rawData['moveTo'].y
+
+    
+    /* DBG only
+    console.log('req body: ')
+    console.log(rawData)
+    console.log('received coords ' + f_x + ' ' + f_y + ' ' + t_x + ' ' + t_y)
+    */
+
+    let moveStatus = makeMove(boardId, f_x, f_y, t_x, t_y)
+
+    console.log('makeMove begin')
+    console.log(rawData)
+
     if (moveStatus !== boardState.INVALID) {
         let opponentId
 
         // determine color of the opponent
-        if (userId === boardCp.whiteId)
-            opponentId = boardCp.blackId
+        if (userId === boardData.whiteId)
+            opponentId = boardData.blackId
         else
-            opponentId = boardCp.whiteId
+            opponentId = boardData.whiteId
 
+        console.log(active_users)
+        console.log(boardData)
+        console.log(opponentId)
         // send back the cached request
         if (active_users.has(opponentId)) {
-
-            active_users.get(opponentId).awaitedRequest.writeHead(200)
-            active_users.get(opponentId).awaitedRequest.write({
+            let opponentSessionData = active_users.get(opponentId)
+            opponentSessionData.awaitedRequest.writeHead(200)
+            opponentSessionData.awaitedRequest.write(JSON.stringify({
                 moveFrom: rawData['moveFrom'],
                 moveTo: rawData['moveTo']
-            })
-            active_users.get(opponentId).awaitedRequest.send()
+            }))
+            opponentSessionData.awaitedRequest.send()
 
             res.writeHead(200)
+            res.send()
         } else {
             res.writeHead(400)
-            res.write({error: errorCode.MATCH_ENDED}) // later specify 'abandoned by X'
+            res.write(JSON.stringify({error: errorCode.MATCH_ENDED})) // later specify 'abandoned by X'
+            res.send()
         }
 
     } else {
         // move could not be made
         res.writeHead(400)
-        res.write({error: errorCode.BAD_REQUEST})
+        res.write(JSON.stringify({error: errorCode.BAD_REQUEST}))
+        res.send()
     }
 
     // 200 or 400
-    res.send()
-});
+})
 
 app.post('/login', (req, res) => {
     let {usernameOrEmail, password} = req.body
@@ -790,7 +834,7 @@ app.post('/login', (req, res) => {
             // note: if this isn't clear yet, userId IS A random, PRIVATE SESSION TOKEN
             let newUserId = crypto.randomBytes(32).toString('hex')
             
-            let newSessionData = blankActiveUserPrefab
+            let newSessionData = {... blankActiveUserPrefab}
 
             newSessionData.email = email
             newSessionData.dateOfCreation = new Date()
@@ -837,7 +881,7 @@ app.post('/register', async (req, res) => {
 
     // password repeat should be checked locally, and the 'register' button should just get greyed out
 
-    let newUser = blankPlayerPrefab
+    let newUser = {... blankPlayerPrefab}
     newUser.username = username
     newUser.email = email
 
