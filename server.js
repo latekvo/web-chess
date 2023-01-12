@@ -478,20 +478,20 @@ function checkMove(boardId, {f_x, f_y}, {t_x, t_y}) {
 
 /**
  * creates a new board and pushes it to the board_db
- * @param whiteUser - white user's identification hash
- * @param blackUser - black user's identification hash
+ * @param whiteUserId - white user's identification hash
+ * @param blackUserId - black user's identification hash
  * @returns {string} - hash of the created board
  */
-function makeBoard(whiteUser, blackUser) {
+function makeBoard(whiteUserId, blackUserId) {
     let boardId = crypto.randomBytes(32).toString('hex');
 
     let newBoard = blankBoardPrefab
 
     newBoard.boardId = boardId
-    newBoard.whiteId = whiteUser
-    newBoard.blackId = blackUser
-    newBoard.whiteEmail = active_users.get(whiteUser) // doesn't matter if these are undefined
-    newBoard.blackEmail = active_users.get(blackUser)
+    newBoard.whiteId = whiteUserId
+    newBoard.blackId = blackUserId
+    newBoard.whiteEmail = active_users.get(whiteUserId) // doesn't matter if these are undefined
+    newBoard.blackEmail = active_users.get(blackUserId) // just look 5 lines lower
     newBoard.gameState = boardState.NOT_STARTED
 
     if (newBoard.whiteEmail !== undefined)
@@ -561,34 +561,34 @@ app.post('/declareReady', (req, res) => {
     let requester = user_db.get(requesterSessionData.email)
     let board = board_db.get(requesterSessionData.currentBoardId)
 
-    let playerWhite = active_users.get(board.whiteId)
-    let playerBlack = active_users.get(board.blackId)
+    let whiteSessionData = active_users.get(board.whiteId)
+    let blackSessionData = active_users.get(board.blackId)
 
     // check if the other player is ready, if so, send back both replies
     // if not, set this response as the player's awaited response
-    if ((playerWhite !== undefined && playerWhite.awaitedRequest !== undefined) ||
-        (playerBlack !== undefined && playerBlack.awaitedRequest !== undefined)) {
+    if ((whiteSessionData !== undefined && whiteSessionData.awaitedRequest !== undefined) ||
+        (blackSessionData !== undefined && blackSessionData.awaitedRequest !== undefined)) {
 
         console.log('ready status: both players ready: ' + requester.username + ' has joined')
 
         let requesterColor = undefined
 
-        if (playerWhite !== undefined) {
-            console.log('player ' + playerWhite.username + ' is now playing')
-            playerWhite.awaitedRequest.writeHead(200)
-            playerWhite.awaitedRequest.write(JSON.stringify({color: pe.WHITE}))
-            playerWhite.awaitedRequest.send()
+        if (whiteSessionData !== undefined) {
+            console.log('player ' + whiteSessionData.username + ' is now playing')
+            whiteSessionData.awaitedRequest.writeHead(200)
+            whiteSessionData.awaitedRequest.write(JSON.stringify({color: pe.WHITE}))
+            whiteSessionData.awaitedRequest.send()
 
-            playerWhite.awaitedRequest = undefined
+            whiteSessionData.awaitedRequest = undefined
 
             requesterColor = pe.BLACK
         } else {
-            console.log('player ' + playerBlack.username + ' is now playing')
-            playerBlack.awaitedRequest.writeHead(200)
-            playerBlack.awaitedRequest.write(JSON.stringify({color: pe.BLACK}))
-            playerBlack.awaitedRequest.send()
+            console.log('player ' + blackSessionData.username + ' is now playing')
+            blackSessionData.awaitedRequest.writeHead(200)
+            blackSessionData.awaitedRequest.write(JSON.stringify({color: pe.BLACK}))
+            blackSessionData.awaitedRequest.send()
 
-            playerBlack.awaitedRequest = undefined
+            blackSessionData.awaitedRequest = undefined
 
             requesterColor = pe.WHITE
         }
@@ -599,11 +599,11 @@ app.post('/declareReady', (req, res) => {
         res.write(JSON.stringify({color: requesterColor}))
         res.send()
 
-        requester.awaitedRequest = undefined
+        requesterSessionData.awaitedRequest = undefined
     } else {
         console.log('ready status: one player ready: ' + requester.username)
 
-        requester.awaitedRequest = res
+        requesterSessionData.awaitedRequest = res
 
         // only now do we actually determine the color
     }
@@ -615,10 +615,8 @@ app.post('/createGame', (req, res) => {
 
     let creatorId = reqBody["userId"]
 
-    console.log('creator ID: ' + creatorId)
-
-    let creatorMail = active_users.get(creatorId).email
-    let user = user_db.get(creatorMail)
+    let userSessionData = active_users.get(creatorId)
+    let user = user_db.get(userSessionData.email)
 
     if (user === undefined) {
         res.writeHead(400)
@@ -628,13 +626,22 @@ app.post('/createGame', (req, res) => {
         return
     }
 
+    let whiteId = undefined, blackId = undefined;
+
+    if (Math.random() < 0.5) {
+        whiteId = creatorId
+    } else {
+        blackId = creatorId
+    }
+
     // Advertise, then use makeMatch
     // write both req and res to the advertisement file, as soon as someone joins, reactivate both req and res and send them an OK as well as the board id
-    let boardId = makeBoard(whiteId, blackId);
+    let boardId = makeBoard(whiteId, blackId)
+
     console.log('created a new board: ')
     console.log(board_db.get(boardId))
 
-    user.currentBoardId = boardId
+    userSessionData.currentBoardId = boardId
 
     console.log('opened new ad for: ' + boardId)
     open_matches_db.add(boardId)
@@ -648,7 +655,9 @@ app.post('/createGame', (req, res) => {
 // creator of the game has to call /joinGame as well, it will make him wait for an opponent to show up
 app.post('/joinGame', (req, res) => {
     let userId = req.body["userId"]
-    let user = user_db.get(active_users.get(userId).email)
+
+    let userSessionData = active_users.get(userId)
+    let user = user_db.get(userSessionData.email)
 
     let boardId = req.body["boardId"]
     let board = board_db.get(boardId)
@@ -680,7 +689,7 @@ app.post('/joinGame', (req, res) => {
     }
 
     open_matches_db.delete(boardId)
-    user.currentBoardId = boardId
+    userSessionData.currentBoardId = boardId
 
     res.writeHead(200)
     res.write(JSON.stringify({boardId: boardId}))
@@ -703,17 +712,17 @@ app.post('/getMove', (req, res) => {
 app.post('/makeMove', async (req, res) => {
     let rawData = req.body
     let userId = rawData['userId']
-    let userData = user_db.get(active_users.get(userId).email)
+    let userSessionData = user_db.get(active_users.get(userId).email)
 
     // user timed out
-    if (userData === undefined) {
+    if (userSessionData === undefined) {
         res.writeHead(400)
         res.write({error: errorCode.SESSION_TIMED_OUT})
         res.send()
         return
     }
 
-    let boardId = userData.currentBoardId
+    let boardId = userSessionData.currentBoardId
     let boardCp = board_db.get(boardId)
 
     let moveStatus = await makeMove(boardId, rawData['moveFrom'], rawData['moveTo'])
