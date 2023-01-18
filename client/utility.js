@@ -44,9 +44,9 @@ function getPieceIt(pieceId) {
     result: [] // [y][x] array that represents end state of this special event
 }
 */
-// returns special behaviour's index, so that it can be universally used in both the marking, and the moving functions
+// returns >0 if everything is ok
 // returns -1 if there is no special behaviour detected
-function checkSpecialCondition() {
+function checkSpecialCondition(executeMove = false) {
     // using these redundancies so that this code can be easily copied to the server side
     let board = localPlayingField
     let color = localPieceColor
@@ -60,11 +60,9 @@ function checkSpecialCondition() {
 
     let t_x, t_y
 
+    let finalOutput = -1
     let outputIndex = -1
     specialPositions.forEach((rawBehaviour, index) => {
-        // cannot break from forEach, so just skip if there is a match found
-        if (outputIndex !== -1)
-            return
 
         // nothing else seems to word, is it really this hard to just copy by value in JS?
         // only other options i see require external libraries wtf
@@ -167,13 +165,21 @@ function checkSpecialCondition() {
         }
 
         // but cancel that output if the position would have to be out of bounds
-        if (!doesMatchUp || matchPos_x < 0 || r_bound_x > 7 || matchPos_y < 0 || r_bound_y > 7 )
+        if (!doesMatchUp || matchPos_x < 0 || r_bound_x > 7 || matchPos_y < 0 || r_bound_y > 7 ) {
             outputIndex = -1
+            return
+        }
 
-        // if this is just a move-preview, return, otherwise, apply the position
+        if (outputIndex !== -1) {
+            finalOutput = 0
+        }
+
+            // if this is just a move-preview, return, otherwise, apply the position
         if (endTarget === undefined) {
             if (outputIndex !== -1) {
-                console.log('special')
+                finalOutput = 0
+
+                console.log('special indication')
                 console.log(t_x + ' ' + t_y)
 
                 let hor = String.fromCharCode('a'.charCodeAt(0) + t_x),
@@ -184,14 +190,43 @@ function checkSpecialCondition() {
                 console.log('special id: ' + id)
 
                 markSquare(id)
+
             }
 
-        } else {
+            return
+        }
+
+        let checkedX = parseInt(endTarget.dataset.x),
+            checkedY = parseInt(endTarget.dataset.y)
+
+        console.log('will move specially: ')
+        console.log(endTarget)
+        console.log('is undefined: ' + (endTarget === undefined))
+        console.log('is move on the list: ' + (outputIndex !== -1))
+        console.log('should we apply: ' + executeMove)
+        console.log('move check: x ' + t_x + ' ' + checkedX)
+        console.log('move check: y ' + t_y + ' ' + checkedY)
+        if (executeMove && outputIndex !== -1 && checkedX === t_x && checkedY === t_y) {
             // execute the move as long as doesMatchUp = true, endPos = clickPos, initPos already checked
+            console.log('specially moved locally')
+            console.log(f_x + ' ' + f_y)
+            console.log(t_x + ' ' + t_y)
+
+            localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
+            localPlayingField[f_y][f_x] = pe.BLANK
+
+            if (localPieceColor === pe.WHITE)
+                localPieceColor = pe.BLACK
+            else
+                localPieceColor = pe.WHITE
+
+            drawBoard()
         }
 
         outputIndex = -1
     })
+
+    return finalOutput
 }
 
 let rayCastBlobbedSquares = []
@@ -264,8 +299,8 @@ function castRay(initElement) {
             // block friendly-fire marks
             let origSquarePiece = localPlayingField[y][x]
             let destSquarePiece = localPlayingField[ver][hor]
-            let squareColor = getColor(destSquarePiece)
-            if (localPieceColor === squareColor)
+            let destSquareColor = getColor(destSquarePiece)
+            if (localPieceColor === destSquareColor)
                 return
 
             // the pawn cannot move when there's an enemy in front of it
@@ -316,8 +351,16 @@ function castRay(initElement) {
 
 /// FOLLOWING CODE IS UP TO CHANGE, NOT FULLY TESTED YET - CURRENTLY BEING TESTED
 /// REMEMBER TO SYNC THIS, AND SERVER SIDE CODE
+// todo: as soon as there is some time, remove this whole function and just use a single function for drawing, checking and moving
+//  having same code but in different format all over the place causes an unnecessary amount of trouble
 
 function checkMove(f_x, f_y, t_x, t_y) {
+    let isSpecial = checkSpecialCondition()
+    if (isSpecial !== -1) {
+        console.log('move is special: ' + isSpecial)
+        return boardState.UNRESOLVED
+    }
+
     let board = localPlayingField
 
     console.log('f: ' + f_x + ' ' + f_y)
@@ -357,25 +400,28 @@ function checkMove(f_x, f_y, t_x, t_y) {
 
         let ray = {x: f_x, y: f_y}
 
-        console.log('ray origin x: ' + ray.x + ' y: ' + ray.y)
-
         // iterate the ray
         ray.x += vel_x
         ray.y += vel_y
 
+        // check if the ray is present in piece's move list
+        let isMovePresent = false
+        atk_vel_list[pieceIt].velocities.forEach((vel) => {
+            if (vel[0] === vel_x && vel[1] === vel_y)
+                isMovePresent = true
+        })
+
         // cast the ray
-        while (ray.x >= 0 && ray.x < 8 && ray.y >= 0 && ray.y < 8) {
+        while (ray.x >= 0 && ray.x < 8 && ray.y >= 0 && ray.y < 8 && isMovePresent) {
 
             // reached the destination
             if (ray.x === t_x && ray.y === t_y) {
                 isMovePossible = true
-                console.log('ray-cast successful, found the enemy')
                 break
             }
 
             // check for: line of sight
             if (board[ray.y][ray.x] !== pe.BLANK) {
-                console.log('ray-cast unsuccessful, encountered an obstacle')
                 break
             }
 
@@ -385,24 +431,59 @@ function checkMove(f_x, f_y, t_x, t_y) {
         }
 
     } else /* (isPosBased) */ {
-        // vec from f to t
-        let mask_x = t_x - f_x,
-            mask_y = t_y - f_y
 
-        console.log('pattern mask x: ' + mask_x + ' y: ' + mask_y)
+        // firstly, check everything pawn-related
 
-        // and just check if there exists a fitting mask for such a move
-        for (let i = 0; i < mov_pos_list[pieceIt].positions.length; i++) {
+        // block friendly-fire marks
+        let origSquarePiece = localPlayingField[f_y][f_x]
+        let destSquarePiece = localPlayingField[t_y][t_x]
+        let destSquareColor = getColor(destSquarePiece)
 
-            console.log('checking against x: ' + mov_pos_list[pieceIt].positions[i][0] + ' y: ' + mov_pos_list[pieceIt].positions[i][1])
+        // the pawn cannot move when there's an enemy in front of it
+        if (origSquarePiece === pe.W_P || origSquarePiece === pe.B_P) {
+            let mask_x = t_x - f_x,
+                mask_y = t_y - f_y
 
-            if (mask_x === mov_pos_list[pieceIt].positions[i][0] &&
-                mask_y === mov_pos_list[pieceIt].positions[i][1]) {
+            console.log('checking pawn positions')
 
-                console.log('move determined possible')
+            // if there is a lateral offset, check if there is a piece to be taken
+            if (mask_x !== 0 && destSquareColor !== localPieceColor && destSquarePiece !== pe.BLANK) {
+                atk_pos_list[pieceIt].positions.forEach((pos) => {
+                    if (mask_x === pos[0] &&
+                        mask_y === pos[1]) {
+                        isMovePossible = true
+                    }
+                })
+            }
 
-                isMovePossible = true
-                break
+            // normal movement is also allowed
+            if (mask_x === 0 && destSquarePiece === pe.BLANK) {
+                mov_pos_list[pieceIt].positions.forEach((pos) => {
+                    if (mask_x === pos[0] &&
+                        mask_y === pos[1]) {
+                        isMovePossible = true
+                    }
+                })
+
+            }
+        } else {
+            // if it's not a pawn which can be blocked, check everything else
+
+            // vec from f to t
+            let mask_x = t_x - f_x,
+                mask_y = t_y - f_y
+
+            // and just check if there exists a fitting mask for such a move
+            for (let i = 0; i < mov_pos_list[pieceIt].positions.length; i++) {
+
+                if (mask_x === mov_pos_list[pieceIt].positions[i][0] &&
+                    mask_y === mov_pos_list[pieceIt].positions[i][1]) {
+
+                    console.log('move determined possible')
+
+                    isMovePossible = true
+                    break
+                }
             }
         }
     }
@@ -469,11 +550,13 @@ function checkMove(f_x, f_y, t_x, t_y) {
                 for (let pieceId = 0; pieceId < atk_vel_list[caseId].pieces.length; pieceId++) {
                     if (wStopRay === false && board[ray_w.y][ray_w.x] === atk_vel_list[caseId].pieces[pieceId] &&
                         getColor(atk_vel_list[caseId].pieces[pieceId]) === pe.BLACK) {
+                        console.log('data causing check: pieceId: ' + pieceId + ' caseId: ' + caseId)
                         isWhiteMated = true;
                         wStopRay = true;
                     }
                     if (bStopRay === false && board[ray_b.y][ray_b.x] === atk_vel_list[caseId].pieces[pieceId] &&
                         getColor(atk_vel_list[caseId].pieces[pieceId]) === pe.WHITE) {
+                        console.log('data causing check: pieceId: ' + pieceId + ' caseId: ' + caseId)
                         isBlackMated = true;
                         bStopRay = true;
                     }

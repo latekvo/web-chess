@@ -101,6 +101,15 @@ function moveStart(e) {
 }
 
 function finalizeMove() {
+    console.log('try finalizeMove()')
+
+    // try applying any special positions since they have a higher priority
+    let isSpecial = checkSpecialCondition(true)
+    if (isSpecial !== -1) {
+        console.log('finalized move with special condition')
+        return
+    }
+
     console.log('finalize move: ')
 
     let f_x = parseInt(initTarget.dataset.x),
@@ -164,7 +173,7 @@ function finalizeMove() {
         return
     }
 
-    console.log('move failed')
+    console.log('move finalization failed')
 }
 
 function moveEnd(e) {
@@ -203,10 +212,12 @@ function moveEnd(e) {
         return
     }
 
-    console.log('checkMove return code: ' + checkMove(f_x, f_y, t_x, t_y))
+    let checkStatus = checkMove(f_x, f_y, t_x, t_y)
+
+    console.log('checkMove return code: ' + checkStatus)
 
     // UNRESOLVED = fine, apply the changes
-    if (checkMove(f_x, f_y, t_x, t_y) === boardState.UNRESOLVED) {
+    if (checkStatus === boardState.UNRESOLVED) {
 
         finalizeMove()
     }
