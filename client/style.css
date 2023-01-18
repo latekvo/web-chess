@@ -70,7 +70,7 @@ body {
     height: 95%;
     aspect-ratio: 1 / 1;
 
-    background-color: var(--darktone); /* todo: remove */
+    background-color: var(--darktone); 
 }
 
 #game-board {

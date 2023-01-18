@@ -62,6 +62,7 @@ function checkSpecialCondition(executeMove = false) {
 
     let finalOutput = -1
     let outputIndex = -1
+    let didApplyMove = -1
     specialPositions.forEach((rawBehaviour, index) => {
 
         // nothing else seems to word, is it really this hard to just copy by value in JS?
@@ -124,6 +125,7 @@ function checkSpecialCondition(executeMove = false) {
         if (eventPosTrue_x === f_x && eventPosTrue_y === f_y) {
             t_x = matchPos_x + behaviour.clickPosition.x
             t_y = matchPos_y + behaviour.clickPosition.y
+            console.log('found correct behaviour (should occur only once or twice)')
             outputIndex = index
         }
 
@@ -166,18 +168,14 @@ function checkSpecialCondition(executeMove = false) {
 
         // but cancel that output if the position would have to be out of bounds
         if (!doesMatchUp || matchPos_x < 0 || r_bound_x > 7 || matchPos_y < 0 || r_bound_y > 7 ) {
+            console.log('invalidated behaviour')
             outputIndex = -1
             return
         }
 
-        if (outputIndex !== -1) {
-            finalOutput = 0
-        }
-
-            // if this is just a move-preview, return, otherwise, apply the position
+        // if this is just a move-preview, return, otherwise, apply the position
         if (endTarget === undefined) {
             if (outputIndex !== -1) {
-                finalOutput = 0
 
                 console.log('special indication')
                 console.log(t_x + ' ' + t_y)
@@ -191,6 +189,7 @@ function checkSpecialCondition(executeMove = false) {
 
                 markSquare(id)
 
+                finalOutput = 0
             }
 
             return
@@ -206,6 +205,11 @@ function checkSpecialCondition(executeMove = false) {
         console.log('should we apply: ' + executeMove)
         console.log('move check: x ' + t_x + ' ' + checkedX)
         console.log('move check: y ' + t_y + ' ' + checkedY)
+
+        if (outputIndex !== -1) {
+            finalOutput = 0
+        }
+
         if (executeMove && outputIndex !== -1 && checkedX === t_x && checkedY === t_y) {
             // execute the move as long as doesMatchUp = true, endPos = clickPos, initPos already checked
             console.log('specially moved locally')
@@ -221,11 +225,17 @@ function checkSpecialCondition(executeMove = false) {
                 localPieceColor = pe.WHITE
 
             drawBoard()
+
+            finalOutput = 0
+            didApplyMove = 0
         }
 
         outputIndex = -1
     })
 
+    if (executeMove === true)
+        return didApplyMove
+        
     return finalOutput
 }
 

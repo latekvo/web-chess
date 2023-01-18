@@ -100,6 +100,35 @@ function moveStart(e) {
     }
 }
 
+function reverseBoard() {
+
+    if (localPieceColor === pe.WHITE)
+        localPieceColor = pe.BLACK
+    else
+        localPieceColor = pe.WHITE
+
+    // rotate the board while keeping the pieces in place
+    document.getElementById('perimeter-game-board').style.transition = "transform 0.5s ease-in-out"
+    document.getElementById('perimeter-game-board').style.transform = "rotate(180deg)"
+    document.querySelectorAll('.piece-img').forEach((el) => {
+        el.style.transition = "transform 0.5s ease-in-out"
+        el.style.transform = "rotate(-180deg)"
+    })
+
+
+    // redraw and unrotate
+    setTimeout(function(){
+        drawBoard()
+        document.getElementById('perimeter-game-board').style.transition = "transform 0s"
+        document.getElementById('perimeter-game-board').style.transform = "rotate(0deg)"
+        document.querySelectorAll('.piece-img').forEach((el) => {
+            el.style.transition = "transform 0s"
+            el.style.transform = "rotate(0deg)"
+        })
+    }, 500)
+
+}
+
 function finalizeMove() {
     console.log('try finalizeMove()')
 
@@ -125,11 +154,8 @@ function finalizeMove() {
         localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
         localPlayingField[f_y][f_x] = pe.BLANK
 
-        if (localPieceColor === pe.WHITE)
-            localPieceColor = pe.BLACK
-        else
-            localPieceColor = pe.WHITE
-        drawBoard()
+        reverseBoard()
+
         return
     }
 
