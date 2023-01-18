@@ -7,7 +7,7 @@
 
 function getColor(piece_id) {
     if (piece_id < 0)
-        return pe.BLANK
+        return piece_id
 
     if (piece_id < pe.B_K)
         return pe.WHITE
@@ -34,19 +34,190 @@ function getPieceIt(pieceId) {
     return {pieceIt: pieceIt, isPosBased: isPosBased}
 }
 
+/* Whole JSON format description
+{
+    specialRule: specialBehaviour // enum indicating special hardcoded checks that have to be done
+    clickPosition: { x, y } // RELATIVE to 'match', which square is clickable
+    matchPosition: { x, y } // RELATIVE to 'board', where the 'match' box begins---
+    eventPosition: { x, y } // RELATIVE to 'match', which square activates this special behaviour event
+    match: [] // [y][x] array that represents the required position for this event to take place
+    result: [] // [y][x] array that represents end state of this special event
+}
+*/
+// returns special behaviour's index, so that it can be universally used in both the marking, and the moving functions
+// returns -1 if there is no special behaviour detected
+function checkSpecialCondition() {
+    // using these redundancies so that this code can be easily copied to the server side
+    let board = localPlayingField
+    let color = localPieceColor
+
+    if (initTarget === undefined) {
+        return -1
+    }
+
+    let f_x = parseInt(initTarget.dataset.x),
+        f_y = parseInt(initTarget.dataset.y)
+
+    let t_x, t_y
+
+    let outputIndex = -1
+    specialPositions.forEach((rawBehaviour, index) => {
+        // cannot break from forEach, so just skip if there is a match found
+        if (outputIndex !== -1)
+            return
+
+        // nothing else seems to word, is it really this hard to just copy by value in JS?
+        // only other options i see require external libraries wtf
+        let behaviour = JSON.parse(JSON.stringify(rawBehaviour))
+
+        let matchSize_x = behaviour.match[0].length,
+            matchSize_y = behaviour.match.length
+
+        // reverse all checks for blacks, not efficient at all but far simpler than anything else
+        if (color === pe.BLACK) {
+            behaviour.match.reverse()
+            behaviour.match.forEach((arr) => arr.reverse())
+            behaviour.result.reverse()
+            behaviour.result.forEach((arr) => arr.reverse())
+
+            // these are all offsets
+            behaviour.eventPosition.x = matchSize_x - behaviour.eventPosition.x - 1
+            behaviour.eventPosition.y = matchSize_y - behaviour.eventPosition.y - 1
+            behaviour.clickPosition.x = matchSize_x - behaviour.clickPosition.x - 1
+            behaviour.clickPosition.y = matchSize_y - behaviour.clickPosition.y - 1
+
+            // board_size - match_pos - (match_size - 1)
+            // ex: 7 - 1 - 3 + 1 = 4
+            if (behaviour.matchPosition.x !== -1)
+                behaviour.matchPosition.x = 7 - behaviour.matchPosition.x - matchSize_x + 1
+            if (behaviour.matchPosition.y !== -1)
+                behaviour.matchPosition.y = 7 - behaviour.matchPosition.y - matchSize_y + 1
+        }
+
+        let eventPosOffset_x = behaviour.eventPosition.x,
+            eventPosOffset_y = behaviour.eventPosition.y
+
+        let matchPos_x = behaviour.matchPosition.x,
+            matchPos_y = behaviour.matchPosition.y
+
+        let eventPosTrue_x, eventPosTrue_y
+
+        // if the variable is known, just set it,
+        // for wildcard variables, substitute them with mouseclick's position and check if everything checks out
+
+        if (matchPos_x !== -1) {
+            eventPosTrue_x = matchPos_x + eventPosOffset_x
+        } else {
+            eventPosTrue_x = f_x
+            matchPos_x = eventPosTrue_x - eventPosOffset_x
+        }
+
+        if (matchPos_y !== -1) {
+            eventPosTrue_y = matchPos_y + eventPosOffset_y
+        } else {
+            eventPosTrue_y = f_y
+            matchPos_y = eventPosTrue_y - eventPosOffset_y
+        }
+
+        let r_bound_x = matchPos_x + matchSize_x - 1,
+            r_bound_y = matchPos_y + matchSize_y - 1
+
+        // if the positions match up
+        if (eventPosTrue_x === f_x && eventPosTrue_y === f_y) {
+            t_x = matchPos_x + behaviour.clickPosition.x
+            t_y = matchPos_y + behaviour.clickPosition.y
+            outputIndex = index
+        }
+
+        let doesMatchUp = true
+        let match = behaviour.match
+
+        /*
+        console.log('current behaviour check: ' + index + ' / ' + specialPositions.length)
+        console.log(behaviour)
+        */
+
+        // make sure the whole 'match' and 'result' matches up
+        for (let y = 0; y < matchSize_y && doesMatchUp; y++) {
+            let true_y = matchPos_y + y
+
+            for (let x = 0; x < matchSize_x && doesMatchUp; x++) {
+                let true_x = matchPos_x + x
+
+                let matchPiece = match[y][x]
+
+                switch (matchPiece) {
+                    case pe.ANY:
+                        break
+                    case pe.ANY_HOSTILE:
+                        let squareColor = getColor(board[true_y][true_x])
+                        if (color === squareColor || board[true_y][true_x] === pe.BLANK)
+                            doesMatchUp = false
+                        break
+                    default:
+                        if (color === pe.BLACK)
+                            matchPiece = invPe.get(matchPiece)
+
+                        if (matchPiece !== board[true_y][true_x])
+                            doesMatchUp = false
+                        break
+                }
+
+            }
+        }
+
+        // but cancel that output if the position would have to be out of bounds
+        if (!doesMatchUp || matchPos_x < 0 || r_bound_x > 7 || matchPos_y < 0 || r_bound_y > 7 )
+            outputIndex = -1
+
+        // if this is just a move-preview, return, otherwise, apply the position
+        if (endTarget === undefined) {
+            if (outputIndex !== -1) {
+                console.log('special')
+                console.log(t_x + ' ' + t_y)
+
+                let hor = String.fromCharCode('a'.charCodeAt(0) + t_x),
+                    ver = String(t_y + 1)
+
+                let id = hor + ver
+
+                console.log('special id: ' + id)
+
+                markSquare(id)
+            }
+
+        } else {
+            // execute the move as long as doesMatchUp = true, endPos = clickPos, initPos already checked
+        }
+
+        outputIndex = -1
+    })
+}
+
 let rayCastBlobbedSquares = []
+
+function markSquare(id) {
+    let htmlElement = document.getElementById(id)
+    htmlElement.style.borderRadius = '35%'
+    rayCastBlobbedSquares.push(htmlElement)
+}
+
 function castRay(initElement) {
+    endTarget = undefined // this sometimes bugs out and needs to be fixed here
+    checkSpecialCondition() // does the same thing but for the special conditions
+
     if (initElement === undefined || initElement === null)
         return
 
     let x = parseInt(initElement.dataset.x),
         y = parseInt(initElement.dataset.y)
 
+
     let pieceId = localPlayingField[y][x]
 
     let {pieceIt, isPosBased} = getPieceIt(pieceId)
 
-    console.log(pieceIt)
+    console.log('pieceIt: ' + pieceIt)
 
     // this is the correct style, add these elements to the rayCastBlobbedSquares
     if (!isPosBased) {
@@ -67,11 +238,13 @@ function castRay(initElement) {
 
                 let id = hor + ver
 
-                console.log('id: ' + id)
+                if (getColor(localPlayingField[r_y][r_x]) === localPieceColor)
+                    break
 
-                let htmlElement = document.getElementById(id)
-                htmlElement.style.borderRadius = '35%'
-                rayCastBlobbedSquares.push(htmlElement)
+                markSquare(id)
+
+                if (localPlayingField[r_y][r_x] !== pe.BLANK)
+                    break
 
                 r_x += e[0]
                 r_y += e[1]
@@ -82,16 +255,52 @@ function castRay(initElement) {
         // DOT EVERY POSITION
         mov_pos_list[pieceIt].positions.forEach((e) => {
 
-            let hor = x + e[0]
-            /*if (localPieceColor === pe.BLACK)
-                hor = 7 - hor*/
-
-            let ver = y + e[1]
-            /*if (localPieceColor === pe.WHITE)
-                ver = 7 - ver*/
+            let hor = x + e[0],
+                ver = y + e[1]
 
             if (hor < 0 || hor > 7 || ver < 0 || ver > 7 )
                 return
+
+            // block friendly-fire marks
+            let origSquarePiece = localPlayingField[y][x]
+            let destSquarePiece = localPlayingField[ver][hor]
+            let squareColor = getColor(destSquarePiece)
+            if (localPieceColor === squareColor)
+                return
+
+            // the pawn cannot move when there's an enemy in front of it
+            if (origSquarePiece === pe.W_P && localPieceColor === pe.WHITE ||
+                origSquarePiece === pe.B_P && localPieceColor === pe.BLACK) {
+
+                // first, mark any possible attack positions
+                atk_pos_list[pieceIt].positions.forEach((e_atk) => {
+                    let hor_atk = x + e_atk[0],
+                        ver_atk = y + e_atk[1]
+
+                    console.log('checked pawn atk: ' + hor_atk + ver_atk)
+
+                    if (hor_atk < 0 || hor_atk > 7 || ver_atk < 0 || ver_atk > 7 )
+                        return
+
+                    // only mark the square if there is a piece to be attacked
+                    let moveToColor = getColor(localPlayingField[ver_atk][hor_atk])
+
+                    if (moveToColor !== localPieceColor && moveToColor !== pe.BLANK) {
+
+                        hor_atk = String.fromCharCode('a'.charCodeAt(0) + hor_atk)
+                        ver_atk = String(ver_atk + 1)
+
+                        let id_atk = hor_atk + ver_atk
+
+                        markSquare(id_atk)
+                    }
+
+                })
+                // second, de-mark any forward moves if the space in-front of the pawn is blocked
+
+                if (localPlayingField[ver][hor] !== pe.BLANK)
+                    return
+            }
 
             console.log('hor: ' + hor + ' ver: ' + ver)
 
@@ -100,12 +309,9 @@ function castRay(initElement) {
 
             let id = hor + ver
 
-            let htmlElement = document.getElementById(id)
-            htmlElement.style.borderRadius = '35%'
-            rayCastBlobbedSquares.push(htmlElement)
+            markSquare(id)
         })
     }
-
 }
 
 /// FOLLOWING CODE IS UP TO CHANGE, NOT FULLY TESTED YET - CURRENTLY BEING TESTED

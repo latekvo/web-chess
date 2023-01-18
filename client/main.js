@@ -116,6 +116,10 @@ function finalizeMove() {
         localPlayingField[t_y][t_x] = localPlayingField[f_y][f_x]
         localPlayingField[f_y][f_x] = pe.BLANK
 
+        if (localPieceColor === pe.WHITE)
+            localPieceColor = pe.BLACK
+        else
+            localPieceColor = pe.WHITE
         drawBoard()
         return
     }
@@ -348,7 +352,6 @@ function drawBoard() {
 }
 
 function getOpenMatches() {
-    console.log('getting new matches')
 
     if (localBoardId !== undefined) {
         document.getElementById('match-list').innerHTML = ""
@@ -360,8 +363,6 @@ function getOpenMatches() {
     fetch('/games')
         .then(response => response.json())
         .then(matches => {
-
-            console.log(matches)
 
             let matchList = document.getElementById('match-list')
             matchList.innerHTML = ""
